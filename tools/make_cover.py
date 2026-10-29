@@ -98,7 +98,6 @@ def main():
 
     out = Path(__file__).resolve().parent.parent / "mod" / "cover.png"
     img.resize((SIZE, SIZE), Image.LANCZOS).save(out, optimize=True)
-    img.resize((400, 400), Image.LANCZOS).save(Path("/tmp/claude-1000/-home-sajjad-src-2026-37-cultist/a23ce749-6d8d-4ad4-b0cb-d1c33e4f3ae8/scratchpad/cover_preview.png"))
     print(out)
 
 
