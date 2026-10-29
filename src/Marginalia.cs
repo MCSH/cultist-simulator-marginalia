@@ -15,6 +15,7 @@ public class Marginalia
             BoardLabels.Load();
             NoteMenuItems.Register();
             BoardMenuItems.Register();
+            WikiMenuItems.Register();
 
             var host = new GameObject("Marginalia");
             UnityEngine.Object.DontDestroyOnLoad(host);
