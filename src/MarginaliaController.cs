@@ -51,6 +51,7 @@ namespace MarginaliaMod
 
         private EditorState _editor;
         private bool _focusEditor;
+        private bool _newlineTyped;
         private Vector2 _editorScroll;
 
         private sealed class SizerState
@@ -160,6 +161,7 @@ namespace MarginaliaMod
             if (keyboard == null || mouse == null)
                 return;
 
+            SteamCloud.Tick();
             BoardLabels.Tick();
             Rulers.Tick();
 
@@ -328,6 +330,17 @@ namespace MarginaliaMod
             pick(sizer)?.Invoke();
         }
 
+        private void InsertNewline()
+        {
+            if (GUI.GetNameOfFocusedControl() != NoteControlName)
+                return;
+            if (GUIUtility.GetStateObject(typeof(TextEditor), GUIUtility.keyboardControl) is TextEditor text)
+            {
+                text.Insert('\n');
+                _editor.Text = text.text;
+            }
+        }
+
         private void CloseEditor()
         {
             _editor = null;
@@ -468,6 +481,23 @@ namespace MarginaliaMod
                     KeepEditor();
                     e.Use();
                     return;
+                }
+
+                // Unity doesn't reliably turn Return into a new line in a text area (on some
+                // platforms it sends no character for it), so add the line ourselves. Return
+                // may come as a key, a '\n' or '\r' character, or a key and then a character.
+                bool newlineKey = e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter;
+                bool newlineChar = e.character == '\n' || e.character == '\r';
+                if (newlineKey || newlineChar)
+                {
+                    if (newlineKey || !_newlineTyped)
+                        InsertNewline();
+                    _newlineTyped = newlineKey && !newlineChar;
+                    e.Use();
+                }
+                else
+                {
+                    _newlineTyped = false;
                 }
             }
 

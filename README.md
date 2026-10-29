@@ -15,7 +15,7 @@ This is an unofficial fan mod. It isn't affiliated with Weather Factory or Fando
 ## Use
 
 - Hold **Alt** and **right-click** a card, a verb, an aspect icon, or an open verb, card or aspect window.
-- Pick **Write note…** or **Edit note…**. Press **Ctrl+Enter** to save the note (the button is labelled *Keep*) or **Esc** to discard it. **Erase note** deletes it.
+- Pick **Write note…** or **Edit note…**. **Enter** starts a new line. Press **Ctrl+Enter** to save the note (the button is labelled *Keep*) or **Esc** to discard it. **Erase note** deletes it.
 - If a note exists, the menu shows a preview of it.
 - **Open wiki** shows the item's [Cultist Simulator Wiki](https://cultistsimulator.fandom.com/) article in an in-game window, so it doesn't depend on Steam or a browser. The mod uses the wiki's API to find the best-matching title, fetch the article, and convert it to the game's text format. Links between articles work inside the window. Use **Back** (or the mouse back button) to return, and **Close**, **Esc** or a click outside to dismiss it. **Browser** opens the same article in the Steam overlay, or your system browser if the overlay is unavailable. Fandom's bare `?action=render` view keeps that fast. Images aren't shown, and very long articles are cut short with a pointer to the browser.
 
@@ -61,6 +61,8 @@ Notes are stored in `marginalia.json`, board labels in `marginalia_board.json`, 
 | Linux | `~/.config/unity3d/Weather Factory/Cultist Simulator/` |
 | Windows | `%USERPROFILE%\AppData\LocalLow\Weather Factory\Cultist Simulator\` |
 | macOS | `~/Library/Application Support/Weather Factory/Cultist Simulator/` |
+
+On Steam, the mod also keeps a copy of all four files in the game's Steam Cloud space, as one small file (`marginalia_cloud.json`), so they follow you between computers like your saves do. When the game starts, each file is compared with its cloud copy and the newer one wins. If you change notes on two computers without the game syncing in between, the later change is kept. Without Steam, or with Steam Cloud turned off, everything stays local.
 
 If one of these files can't be read, for example after a hand edit with a typo, the mod leaves it untouched and doesn't save changes to it until it's fixed. The game's log says which file it was.
 

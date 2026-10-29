@@ -57,6 +57,13 @@ namespace MarginaliaMod
         public static void Load()
         {
             _rulers = JsonFile.Read(FilePath, new List<Data>());
+            // Reloaded (with newer data from Steam Cloud): draw them again.
+            if (_root != null)
+            {
+                UnityEngine.Object.Destroy(_root.gameObject);
+                _root = null;
+                _nextSphereSearch = 0f;
+            }
         }
 
         public static void Save()

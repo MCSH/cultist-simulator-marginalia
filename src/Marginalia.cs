@@ -15,6 +15,15 @@ public class Marginalia
             BoardLabels.Load();
             Rulers.Load();
             PauseWatch.Load();
+            SteamCloud.Watch(
+                new[] { NoteStore.FilePath, BoardLabels.FilePath, Rulers.FilePath, PauseWatch.FilePath },
+                () =>
+                {
+                    NoteStore.Load();
+                    BoardLabels.Load();
+                    Rulers.Load();
+                    PauseWatch.Load();
+                });
             NoteMenuItems.Register();
             BoardMenuItems.Register();
             RulerMenuItems.Register();

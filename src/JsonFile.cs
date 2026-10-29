@@ -29,23 +29,32 @@ namespace MarginaliaMod
             }
         }
 
-        // Write to a temp file first so a crash mid-write can't truncate the real one.
         public static void Write(string path, object value)
         {
+            var json = JsonConvert.SerializeObject(value, Formatting.Indented);
+            if (WriteText(path, json))
+                SteamCloud.Push(path, json);
+        }
+
+        // Write to a temp file first so a crash mid-write can't truncate the real one.
+        public static bool WriteText(string path, string json)
+        {
             if (Unreadable.Contains(path))
-                return;
+                return false;
             try
             {
                 var tmp = path + ".tmp";
-                File.WriteAllText(tmp, JsonConvert.SerializeObject(value, Formatting.Indented));
+                File.WriteAllText(tmp, json);
                 if (File.Exists(path))
                     File.Replace(tmp, path, null);
                 else
                     File.Move(tmp, path);
+                return true;
             }
             catch (Exception ex)
             {
                 NoonUtility.LogWarning("Marginalia: could not write " + path + ": " + ex.Message);
+                return false;
             }
         }
     }
