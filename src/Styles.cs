@@ -12,7 +12,7 @@ namespace MarginaliaMod
         private static readonly Color Faded = new Color(0.66f, 0.6f, 0.5f, 1f);
         private static readonly Color Ember = new Color(0.32f, 0.22f, 0.11f, 1f);
 
-        public static GUIStyle Panel, Dim, Rule, Title, Subtitle, Preview, Item, Field, TextArea, Button, Hint, SizerLabel, SizerValue, Thumb;
+        public static GUIStyle Panel, Dim, Rule, Title, Subtitle, Preview, Item, Field, TextArea, TextField, Button, Hint, SizerLabel, SizerValue, Thumb;
 
         public static void Ensure()
         {
@@ -58,6 +58,7 @@ namespace MarginaliaMod
             TextArea.normal.background = TextArea.hover.background = TextArea.focused.background = TextArea.active.background = clear;
             TextArea.onNormal.background = TextArea.onHover.background = TextArea.onFocused.background = TextArea.onActive.background = clear;
             TextArea.normal.textColor = TextArea.hover.textColor = TextArea.focused.textColor = TextArea.active.textColor = Parchment;
+            TextField = new GUIStyle(TextArea) { wordWrap = false };
 
             Button = new GUIStyle(Item) { alignment = TextAnchor.MiddleCenter, padding = new RectOffset(0, 0, 0, 0) };
             Button.normal.background = Bordered(Ink, new Color(Brass.r, Brass.g, Brass.b, 0.7f));

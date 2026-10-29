@@ -18,12 +18,20 @@ namespace MarginaliaMod
     // "shield" canvas above the game's UI, so a modifier+right-click never reaches the
     // game's tokens (which would otherwise send cards to verbs or toggle windows).
     // The shield stays up while the menu or editor is open, so the game below is inert.
+    // The menu can also be opened mouse-only: the menu button (middle by default),
+    // the "..." handle on a hovered card or verb, or a double-click on an aspect icon.
     //
     // Hotkeys: the game ignores its hotkeys while the EventSystem's selected object has
     // an InputField, so while we're modal we keep a dormant InputField selected.
     public class MarginaliaController : MonoBehaviour
     {
         private const string ModifierConfigKey = "marginalia_modifier";
+        private const string ButtonConfigKey = "marginalia_button";
+        private const string HandleConfigKey = "marginalia_handle";
+
+        // A press of the menu button that moves further than this is a drag, not a click.
+        private const float ClickSlop = 8f;
+        private const float DoubleClickSeconds = 0.4f;
         private const string NoteControlName = "MarginaliaNote";
         private const float MenuWidth = 300f;
         private const float EditorWidth = 600f;
@@ -35,6 +43,22 @@ namespace MarginaliaMod
         private GameObject _shield;
         private GameObject _focusSink;
         private ButtonControl _modifier;
+        private ButtonControl _menuButton;
+        private bool _menuButtonRead;
+        private bool? _handleOn;
+
+        // The menu button is down; on release it opens the menu, unless it was a drag.
+        private sealed class ClickState
+        {
+            public Vector2 Start;
+            public MenuTarget Target;
+            public ButtonControl Button;
+        }
+
+        private ClickState _click;
+
+        private UnityEngine.Object _lastAspect;
+        private float _lastAspectTime;
 
         private MenuTarget _menuTarget;
         private Vector2 _menuScreenPos;
@@ -67,9 +91,27 @@ namespace MarginaliaMod
 
         private SizerState _sizer;
 
-        // Something on the board being moved with modifier + left-drag.
+        // A one-line text box, e.g. for searching.
+        private sealed class PromptState
+        {
+            public string Title;
+            public string Text = "";
+            public string Status;
+            public Func<string, string> OnChange;
+            public Action OnKeep;
+            public Action OnCancel;
+        }
+
+        private PromptState _prompt;
+        private bool _focusPrompt;
+        private const string PromptControlName = "MarginaliaPrompt";
+        private const float PromptWidth = 380f;
+
+        // Something on the board being moved with modifier + left-drag, or a drag of the
+        // menu button.
         private sealed class DragState
         {
+            public ButtonControl Button;
             public Vector2 Offset;
             public Func<bool> Alive;
             public Action<Vector2> MoveTo;
@@ -80,7 +122,13 @@ namespace MarginaliaMod
 
         private WikiWindow _wiki;
 
-        private bool IsModal => _menuTarget != null || _editor != null || _sizer != null || _wiki.IsOpen;
+        private bool IsModal => _menuTarget != null || _editor != null || _sizer != null || _prompt != null || _wiki.IsOpen;
+
+        // IMGUI is laid out for 1080p and scaled to the screen.
+        private static float GuiScale => Mathf.Clamp(Screen.height / 1080f, 0.75f, 3f);
+
+        private static Vector2 ToGui(Vector2 screenPosition) =>
+            new Vector2(screenPosition.x, Screen.height - screenPosition.y) / GuiScale;
 
         private void Awake()
         {
@@ -154,6 +202,46 @@ namespace MarginaliaMod
             return _modifier;
         }
 
+        // The mouse button that opens the menu on its own (middle by default), or null.
+        private ButtonControl MenuButton(Mouse mouse)
+        {
+            if (_menuButtonRead)
+                return _menuButton;
+            var config = Watchman.Get<Config>();
+            if (config == null)
+                return mouse.middleButton;
+            _menuButtonRead = true;
+            switch ((config.GetConfigValue(ButtonConfigKey) ?? "middle").Trim().ToLowerInvariant())
+            {
+                case "none":
+                case "off":
+                    _menuButton = null;
+                    break;
+                case "forward":
+                    _menuButton = mouse.forwardButton;
+                    break;
+                case "back":
+                    _menuButton = mouse.backButton;
+                    break;
+                default:
+                    _menuButton = mouse.middleButton;
+                    break;
+            }
+            return _menuButton;
+        }
+
+        private bool HandleOn()
+        {
+            if (_handleOn.HasValue)
+                return _handleOn.Value;
+            var config = Watchman.Get<Config>();
+            if (config == null)
+                return true;
+            var value = (config.GetConfigValue(HandleConfigKey) ?? "on").Trim().ToLowerInvariant();
+            _handleOn = value != "off" && value != "none" && value != "false";
+            return _handleOn.Value;
+        }
+
         private void Update()
         {
             var keyboard = Keyboard.current;
@@ -166,12 +254,19 @@ namespace MarginaliaMod
             Rulers.Tick();
 
             bool modifierHeld = Modifier(keyboard).isPressed;
-            _shield.SetActive(modifierHeld || IsModal || _drag != null);
+            var menuButton = MenuButton(mouse);
             var position = mouse.position.ReadValue();
+            // Over the timers panel, clicks are for the panel, not the table beneath.
+            bool overPanel = TimersPanel.Contains(ToGui(position));
+            _shield.SetActive(modifierHeld || IsModal || _drag != null || _click != null || overPanel);
+
+            bool buttonsDown = mouse.leftButton.isPressed || mouse.rightButton.isPressed || mouse.middleButton.isPressed;
+            MenuHandle.Tick(position, HandleOn() && !modifierHeld && !IsModal && _drag == null && _click == null && !overPanel,
+                buttonsDown);
 
             if (_drag != null)
             {
-                ContinueDrag(mouse, position);
+                ContinueDrag(position);
                 return;
             }
 
@@ -184,7 +279,16 @@ namespace MarginaliaMod
                 return;
             }
 
-            if (modifierHeld && _editor == null && _sizer == null && mouse.rightButton.wasPressedThisFrame)
+            bool canOpen = _editor == null && _sizer == null && _prompt == null;
+            if (_click != null)
+            {
+                ContinueClick(position);
+            }
+            else if (canOpen && menuButton != null && menuButton.wasPressedThisFrame)
+            {
+                StartClick(position, menuButton);
+            }
+            else if (modifierHeld && canOpen && mouse.rightButton.wasPressedThisFrame)
             {
                 var target = TargetResolver.At(position, _shield.transform);
                 if (target != null)
@@ -194,13 +298,68 @@ namespace MarginaliaMod
             }
             else if (modifierHeld && !IsModal && mouse.leftButton.wasPressedThisFrame)
             {
-                TryStartDrag(position);
+                TryStartDrag(position, mouse.leftButton);
+            }
+            else if (!IsModal && mouse.leftButton.wasPressedThisFrame)
+            {
+                TryAspectDoubleClick(position);
             }
         }
 
-        // ---- Moving board labels and rulers (modifier + left-drag) ----------------------
+        // ---- The menu button (middle-click by default) ----------------------------------
 
-        private void TryStartDrag(Vector2 position)
+        // The game treats a middle-click on a card like a left-click, so the shield goes up
+        // at once: the release then lands on the shield and never clicks the card.
+        private void StartClick(Vector2 position, ButtonControl button)
+        {
+            var target = TargetResolver.At(position, _shield.transform);
+            if (target == null)
+            {
+                CloseMenu();
+                return;
+            }
+            _click = new ClickState { Start = position, Target = target, Button = button };
+            _shield.SetActive(true);
+        }
+
+        private void ContinueClick(Vector2 position)
+        {
+            var click = _click;
+            if ((position - click.Start).sqrMagnitude > ClickSlop * ClickSlop)
+            {
+                // Dragged: labels and rulers move; anything else was never a click.
+                _click = null;
+                if (click.Target.Kind == TargetKind.BoardLabel || click.Target.Kind == TargetKind.Ruler)
+                    TryStartDrag(click.Start, click.Button);
+            }
+            else if (!click.Button.isPressed)
+            {
+                _click = null;
+                OpenMenu(click.Target, click.Start);
+            }
+        }
+
+        // ---- Aspects: double-click ----------------------------------------------------
+
+        // Aspect icons have no room for the hover button, so a double-click opens their
+        // menu. The game still shows the aspect's details on each click.
+        private void TryAspectDoubleClick(Vector2 position)
+        {
+            var target = TargetResolver.AspectAt(position, _shield.transform, out var frame);
+            float now = Time.unscaledTime;
+            if (target != null && _lastAspect != null && _lastAspect == frame && now - _lastAspectTime < DoubleClickSeconds)
+            {
+                _lastAspect = null;
+                OpenMenu(target, position);
+                return;
+            }
+            _lastAspect = target != null ? frame : null;
+            _lastAspectTime = now;
+        }
+
+        // ---- Moving board labels and rulers (modifier + left-drag, or menu-button drag) --
+
+        private void TryStartDrag(Vector2 position, ButtonControl button)
         {
             var target = TargetResolver.At(position, _shield.transform);
             if (target == null || !BoardLabels.ScreenToBoard(position, out var pointer))
@@ -209,6 +368,7 @@ namespace MarginaliaMod
             {
                 _drag = new DragState
                 {
+                    Button = button,
                     Offset = new Vector2(label.X, label.Y) - pointer,
                     Alive = () => BoardLabels.Get(label.Id) != null,
                     MoveTo = p => BoardLabels.Move(label, p),
@@ -219,6 +379,7 @@ namespace MarginaliaMod
             {
                 _drag = new DragState
                 {
+                    Button = button,
                     Offset = Rulers.Corner(ruler) - pointer,
                     Alive = () => Rulers.Get(ruler.Id) != null,
                     MoveTo = p => Rulers.Move(ruler, p),
@@ -227,7 +388,7 @@ namespace MarginaliaMod
             }
         }
 
-        private void ContinueDrag(Mouse mouse, Vector2 position)
+        private void ContinueDrag(Vector2 position)
         {
             if (!BoardLabels.IsAttached || !_drag.Alive())
             {
@@ -236,7 +397,7 @@ namespace MarginaliaMod
             }
             if (BoardLabels.ScreenToBoard(position, out var pointer))
                 _drag.MoveTo(pointer + _drag.Offset);
-            if (!mouse.leftButton.isPressed)
+            if (!_drag.Button.isPressed)
             {
                 _drag.Done();
                 _drag = null;
@@ -245,6 +406,8 @@ namespace MarginaliaMod
 
         private void FixedUpdate()
         {
+            // The Heart may beat between fixed steps, even within one frame.
+            Table.Invalidate();
             PauseWatch.Check();
         }
 
@@ -252,6 +415,7 @@ namespace MarginaliaMod
         {
             // The game speed may have changed during Update, before the next beat.
             PauseWatch.Check();
+            PauseWatch.CheckAppearances();
 
             // Clicking anywhere makes the EventSystem drop its selection, so re-assert it
             // every frame; keyboard input is processed before the next Update.
@@ -323,6 +487,24 @@ namespace MarginaliaMod
             };
         }
 
+        // A one-line text box at the top of the screen. onChange runs as the text changes
+        // and returns a status line to show under it; Enter keeps, Esc cancels.
+        public void OpenPrompt(string title, Func<string, string> onChange, Action onKeep, Action onCancel)
+        {
+            CloseMenu();
+            _prompt = new PromptState { Title = title, OnChange = onChange, OnKeep = onKeep, OnCancel = onCancel };
+            _prompt.Status = onChange("");
+            _focusPrompt = true;
+        }
+
+        private void FinishPrompt(Func<PromptState, Action> pick)
+        {
+            var prompt = _prompt;
+            _prompt = null;
+            GUIUtility.keyboardControl = 0;
+            pick(prompt)?.Invoke();
+        }
+
         private void FinishSizer(Func<SizerState, Action> pick)
         {
             var sizer = _sizer;
@@ -365,21 +547,80 @@ namespace MarginaliaMod
 
         private void OnGUI()
         {
-            if (!IsModal)
+            if (!IsModal && !TimersPanel.IsOpen)
                 return;
 
             Styles.Ensure();
             GUI.depth = -1000;
-            float scale = Mathf.Clamp(Screen.height / 1080f, 0.75f, 3f);
+            float scale = GuiScale;
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
             var screen = new Rect(0f, 0f, Screen.width / scale, Screen.height / scale);
+
+            // Drawn first, so the menu and dialogs go over it; only usable when nothing
+            // else wants the keyboard. The wiki window is uGUI, which IMGUI would cover.
+            if (!_wiki.IsOpen)
+                TimersPanel.Draw(screen, _editor == null && _sizer == null && _prompt == null);
+            if (!IsModal)
+                return;
 
             if (_editor != null)
                 DrawEditor(screen);
             else if (_sizer != null)
                 DrawSizer(screen);
-            else
+            else if (_prompt != null)
+                DrawPrompt(screen);
+            else if (_menuTarget != null)
                 DrawMenu(screen, scale);
+        }
+
+        private void DrawPrompt(Rect screen)
+        {
+            var e = Event.current;
+            if (e.type == EventType.KeyDown)
+            {
+                if (e.keyCode == KeyCode.Escape)
+                {
+                    FinishPrompt(p => p.OnCancel);
+                    e.Use();
+                    return;
+                }
+                if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter || e.character == '\n')
+                {
+                    FinishPrompt(p => p.OnKeep);
+                    e.Use();
+                    return;
+                }
+            }
+
+            const float pad = 16f, fieldH = 36f;
+            float inner = PromptWidth - pad * 2f;
+            var title = new GUIContent(_prompt.Title);
+            float titleH = Styles.Title.CalcHeight(title, inner);
+            float height = pad + titleH + 8f + fieldH + Styles.Hint.fixedHeight + pad;
+
+            // Top centre, like the sizer, so the table stays in view.
+            var rect = new Rect((screen.width - PromptWidth) / 2f, 80f, PromptWidth, height);
+            GUI.Box(rect, GUIContent.none, Styles.Panel);
+            float x = rect.x + pad, y = rect.y + pad;
+            GUI.Label(new Rect(x, y, inner, titleH), title, Styles.Title);
+            y += titleH + 8f;
+
+            var field = new Rect(x, y, inner, fieldH);
+            GUI.Box(field, GUIContent.none, Styles.Field);
+            GUI.SetNextControlName(PromptControlName);
+            string text = GUI.TextField(field, _prompt.Text, Styles.TextField);
+            if (text != _prompt.Text)
+            {
+                _prompt.Text = text;
+                _prompt.Status = _prompt.OnChange(text);
+            }
+            if (_focusPrompt && e.type == EventType.Repaint)
+            {
+                GUI.FocusControl(PromptControlName);
+                _focusPrompt = false;
+            }
+            y += fieldH;
+            GUI.Label(new Rect(x, y, inner, Styles.Hint.fixedHeight), _prompt.Status + " · Enter · Esc", Styles.Hint);
         }
 
         private void DrawMenu(Rect screen, float scale)

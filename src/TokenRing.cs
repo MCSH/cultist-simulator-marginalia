@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using SecretHistories.Entities;
 using SecretHistories.UI;
 using UnityEngine;
@@ -6,33 +8,45 @@ using UnityEngine.UI;
 
 namespace MarginaliaMod
 {
-    // A pulsing ring around whatever the game just paused for, until it's unpaused. It's
-    // parented to the token, so it follows it as the table pans and zooms.
-    internal class PauseRing : MonoBehaviour
+    // A pulsing ring that draws the eye to a token: what the game paused for, what a
+    // search found, a timer picked from the panel. It's parented to the token, so it
+    // follows it as the table pans and zooms. Rings come in groups (one per feature), and
+    // each lasts while its keep test holds.
+    internal class TokenRing : MonoBehaviour
     {
         private const int TextureSize = 128;
         private static readonly Color Gold = new Color(1f, 0.82f, 0.4f, 1f);
 
-        private static readonly List<PauseRing> Rings = new List<PauseRing>();
-        private static Sprite _sprite;
+        private static readonly List<TokenRing> Rings = new List<TokenRing>();
+        private static Sprite _ring, _disc;
 
         private Image _image;
         private float _born;
+        private string _group;
+        private Token _token;
+        private Func<bool> _keep;
 
-        public static void Clear()
+        public static void Clear(string group)
         {
-            foreach (var ring in Rings)
+            foreach (var ring in Rings.Where(r => r == null || r._group == group).ToList())
             {
                 if (ring != null)
                     Destroy(ring.gameObject);
+                Rings.Remove(ring);
             }
-            Rings.Clear();
         }
 
-        public static void Show(Token token)
+        // Rings each token (or the verb holding it, if that's all that can be seen) once.
+        public static void Show(IEnumerable<Token> tokens, string group, Func<bool> keep)
+        {
+            foreach (var token in tokens.Select(Visible).Where(t => t != null && !t.Defunct).Distinct())
+                Show(token, group, keep);
+        }
+
+        public static void Show(Token token, string group, Func<bool> keep)
         {
             token = Visible(token);
-            if (token == null || token.Defunct)
+            if (token == null || token.Defunct || Rings.Any(r => r != null && r._group == group && r._token == token))
                 return;
             var parent = token.TokenRectTransform != null ? token.TokenRectTransform : (RectTransform)token.transform;
 
@@ -47,7 +61,10 @@ namespace MarginaliaMod
             rect.sizeDelta = new Vector2(size, size);
             go.AddComponent<LayoutElement>().ignoreLayout = true;
 
-            var ring = go.AddComponent<PauseRing>();
+            var ring = go.AddComponent<TokenRing>();
+            ring._group = group;
+            ring._token = token;
+            ring._keep = keep;
             ring._image = go.AddComponent<Image>();
             ring._image.sprite = RingSprite();
             ring._image.raycastTarget = false;
@@ -68,7 +85,7 @@ namespace MarginaliaMod
             return token;
         }
 
-        private static Vector2 TokenSize(Token token, RectTransform fallback)
+        internal static Vector2 TokenSize(Token token, RectTransform fallback)
         {
             try
             {
@@ -85,8 +102,7 @@ namespace MarginaliaMod
 
         private void Update()
         {
-            var heart = Watchman.Exists<Heart>() ? Watchman.Get<Heart>() : null;
-            if (heart == null || !heart.IsPaused())
+            if (!_keep())
             {
                 Rings.Remove(this);
                 Destroy(gameObject);
@@ -102,13 +118,16 @@ namespace MarginaliaMod
             _image.color = color;
         }
 
-        private static Sprite RingSprite()
+        internal static Sprite RingSprite() => _ring != null ? _ring : _ring = Circle(7f);
+
+        internal static Sprite DiscSprite() => _disc != null ? _disc : _disc = Circle(TextureSize);
+
+        // A white circle, as a band thickness pixels wide inside the edge.
+        private static Sprite Circle(float thickness)
         {
-            if (_sprite != null)
-                return _sprite;
             var texture = new Texture2D(TextureSize, TextureSize, TextureFormat.ARGB32, false) { wrapMode = TextureWrapMode.Clamp };
             var pixels = new Color32[TextureSize * TextureSize];
-            float centre = (TextureSize - 1) / 2f, outer = TextureSize / 2f - 2f, inner = outer - 7f;
+            float centre = (TextureSize - 1) / 2f, outer = TextureSize / 2f - 2f, inner = outer - thickness;
             for (int y = 0; y < TextureSize; y++)
             {
                 for (int x = 0; x < TextureSize; x++)
@@ -121,8 +140,7 @@ namespace MarginaliaMod
             }
             texture.SetPixels32(pixels);
             texture.Apply();
-            _sprite = Sprite.Create(texture, new Rect(0f, 0f, TextureSize, TextureSize), new Vector2(0.5f, 0.5f));
-            return _sprite;
+            return Sprite.Create(texture, new Rect(0f, 0f, TextureSize, TextureSize), new Vector2(0.5f, 0.5f));
         }
     }
 }

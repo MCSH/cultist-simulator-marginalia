@@ -14,7 +14,9 @@ This is an unofficial fan mod. It isn't affiliated with Weather Factory or Fando
 
 ## Use
 
-- Hold **Alt** and **right-click** a card, a verb, an aspect icon, or an open verb, card or aspect window.
+- **Middle-click** a card, a verb, an aspect icon, an open verb, card or aspect window, or the table to open the menu. **Alt + right-click** does the same.
+- Or rest the pointer on a card or verb for a moment: a small round **…** button appears in its top-left corner. Click it for the menu.
+- Or **double-click** an aspect icon.
 - Pick **Write note…** or **Edit note…**. **Enter** starts a new line. Press **Ctrl+Enter** to save the note (the button is labelled *Keep*) or **Esc** to discard it. **Erase note** deletes it.
 - If a note exists, the menu shows a preview of it.
 - **Open wiki** shows the item's [Cultist Simulator Wiki](https://cultistsimulator.fandom.com/) article in an in-game window, so it doesn't depend on Steam or a browser. The mod uses the wiki's API to find the best-matching title, fetch the article, and convert it to the game's text format. Links between articles work inside the window. Use **Back** (or the mouse back button) to return, and **Close**, **Esc** or a click outside to dismiss it. **Browser** opens the same article in the Steam overlay, or your system browser if the overlay is unavailable. Fandom's bare `?action=render` view keeps that fast. Images aren't shown, and very long articles are cut short with a pointer to the browser.
@@ -27,28 +29,38 @@ Pausing:
 
 - On a card that decays, pick **Pause before it decays…**. It applies to every card of that kind.
 - On a verb, pick **Pause at every step…** to pause each time its timer runs out, including when its recipe leads straight into another.
-- Both open a slider for how long before the timer runs out to pause, from **0 s** (right after it ends or decays) up to **35 s**. The steps are fine near zero and coarser further out. It opens on the current setting, or on 0.1 s for a card and 0 s for a verb. **Enter** keeps it. Pick the item again to change it, or pick **Stop pausing**.
+- Both open a slider for how long before the timer runs out to pause, from **0 s** (right after it ends or decays) up to **185 s**. The steps are fine near zero and get coarser further out: tenths of a second at first, then whole seconds, then 25 s near the top. It opens on the current setting, or on 0.1 s for a card and 0 s for a verb. **Enter** keeps it. Pick the item again to change it, or pick **Stop pausing**.
 - **Pause at the end** on a verb pauses right after a recipe that nothing follows, so the results are waiting. It has no slider: whether another recipe follows is only settled once one ends. Pick **Stop pausing at the end** to turn it off. A verb pauses either at every step or at the end, not both.
 - If a timer starts with less time than the slider's setting, the game pauses as soon as it appears.
+- On any card, pick **Pause when one appears** to pause every time a new card of that kind turns up: on the table, in a verb or along the bottom of the screen, including a stack growing (another *Funds*). The new card gets the ring. **Stop pausing when one appears** turns it off. It doesn't fire for cards already there when a game loads.
 - The pause lands on the exact moment at any game speed. Everything else on the table has spent exactly as much time as the verb or card, no more.
 - A gold ring pulses around whatever caused the pause until you unpause. If it's a card inside a closed verb window, the ring goes around the verb.
 - **Step time 0.1 s forward** on the board menu pauses the game if needed, then moves it on by a tenth of a second. The menu stays open, so you can click it repeatedly. It still stops at any of the marks above.
+
+Finding things and keeping an eye on timers:
+
+| The timers panel | The board menu |
+| --- | --- |
+| ![The timers panel: running verbs and decaying cards, soonest first, with the ones that will pause marked](docs/timers.png) | ![The board menu with Find on the table, Hide timers and Step time 0.1 s forward](docs/board-menu.png) |
+
+- **Find on the table…** on the board menu opens a search box. As you type, a gold ring goes around every card and verb whose name contains what you typed. A card inside a closed verb rings the verb. **Enter** closes the box and leaves the rings for a few seconds; **Esc** clears them.
+- **Show timers** on the board menu opens a small panel listing every running verb and decaying card, soonest first, with the time left. Rows that will pause the game say *pauses*. Click a row to ring that card or verb. Drag the panel by its title; **Close** or **Hide timers** puts it away. It shows the 14 soonest.
 
 On the board:
 
 - **Alt + right-click** empty table, then pick **Write on the board…**. The text appears where you clicked, under the cards, and moves with the table when you pan and zoom.
 - **Alt + right-click** a label to **Edit**, make it **Larger** or **Smaller** (the menu stays open so you can click repeatedly), or **Rub out** (delete) it.
-- **Alt + left-drag** a label to move it.
+- **Middle-drag** or **Alt + left-drag** a label to move it.
 
 Rulers, for laying cards out by hand:
 
 - **Alt + right-click** the table and pick **Add grid…**, **Add line (H)…** or **Add line (V)…**. Sliders set the grid's width and height in cards, or the line's length in card widths (H) or card heights (V). The ruler updates as you drag the sliders. **Enter** keeps it and **Esc** cancels.
 - A grid is a frame split into card-sized cells by dashed lines. A line has a tick at every card width or height.
 - Rulers snap so their cells line up with where the game snaps cards, using the grid snap setting in the game's options.
-- **Alt + right-click** a ruler to **Resize** or **Remove** it. Everything else on the board menu works inside a grid too. **Alt + left-drag** a ruler to move it.
+- **Alt + right-click** a ruler to **Resize** or **Remove** it. Everything else on the board menu works inside a grid too. **Middle-drag** or **Alt + left-drag** a ruler to move it.
 - Rulers never move or sort cards. They are only guides drawn beneath the cards and labels.
 
-While Alt is held, the game doesn't see your clicks, so Alt + right-click never sends a card to a verb or toggles a window. Game hotkeys are off while the menu, editor or wiki window is open.
+While Alt is held, the game doesn't see your clicks, so Alt + right-click never sends a card to a verb or toggles a window. A middle-click that opens the menu doesn't reach the game either. Game hotkeys are off while the menu, editor or wiki window is open.
 
 Notes are global: they are keyed by element or verb id and shared across all saves. Cards and aspects are both elements, so a note on the *Lantern* aspect is the same note wherever Lantern appears. Board labels and rulers are also global: they appear in every game.
 
@@ -68,12 +80,17 @@ If one of these files can't be read, for example after a hand edit with a typo, 
 
 The wiki window needs an internet connection. Notes and labels don't.
 
-To use a different modifier, add one of these lines to `config.ini` in the save folder:
+Settings go in `config.ini` in the save folder, one per line. For example:
 
 ```
 marginalia_modifier=ctrl
-marginalia_modifier=shift
+marginalia_button=forward
+marginalia_handle=off
 ```
+
+- `marginalia_modifier` is the key held for right-click and left-drag: `alt` (the default), `ctrl` or `shift`.
+- `marginalia_button` is the mouse button that opens the menu on its own: `middle` (the default), `forward`, `back` or `none`.
+- `marginalia_handle=off` hides the **…** button on hovered cards and verbs.
 
 Some Linux window managers grab Alt + right-drag. If the menu never appears, try `ctrl`.
 

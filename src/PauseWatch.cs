@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using Newtonsoft.Json;
 using SecretHistories.Abstract;
 using SecretHistories.Entities;
 using SecretHistories.Enums;
@@ -14,8 +15,9 @@ using UnityEngine;
 namespace MarginaliaMod
 {
     // Pauses the game a chosen number of seconds before a verb's timer runs out or a
-    // kind of card decays (or right after, at zero). Like notes, the choice is global
-    // and keyed by verb or element id, kept in marginalia_pauses.json.
+    // kind of card decays (or right after, at zero), or whenever a new card of a kind
+    // appears. Like notes, the choices are global and keyed by verb or element id,
+    // kept in marginalia_pauses.json.
     //
     // Timing: the Heart spends game time in beats, every 0.1s of real time times the
     // game speed, so up to 0.6s at once. Before each beat we work out whether it would
@@ -30,9 +32,11 @@ namespace MarginaliaMod
             // Verbs only: pause right after a recipe that nothing follows, rather than at
             // every step. Whether one follows is only settled once a recipe is over, so
             // this has no lead.
+            [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
             public bool AtEnd;
 
             // Seconds before the timer runs out; zero pauses right after.
+            [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
             public float Lead;
         }
 
@@ -71,10 +75,27 @@ namespace MarginaliaMod
             _entries = JsonFile.Read(FilePath, new Dictionary<string, Entry>());
         }
 
+        private const string AppearsPrefix = "appears:";
+
         private static string Key(TargetKind kind, string id) => (kind == TargetKind.Verb ? "verb:" : "element:") + id;
 
         public static Entry Get(MenuTarget target) =>
             _entries.TryGetValue(Key(target.Kind, target.Id), out var entry) ? entry : null;
+
+        public static Entry GetAppears(MenuTarget target) =>
+            _entries.TryGetValue(AppearsPrefix + target.Id, out var entry) ? entry : null;
+
+        public static void SetAppears(MenuTarget target)
+        {
+            _entries[AppearsPrefix + target.Id] = new Entry { Label = target.Label };
+            JsonFile.Write(FilePath, _entries);
+        }
+
+        public static void RemoveAppears(MenuTarget target)
+        {
+            if (_entries.Remove(AppearsPrefix + target.Id))
+                JsonFile.Write(FilePath, _entries);
+        }
 
         public static bool CanDecay(string elementId) =>
             Watchman.Get<Compendium>()?.GetEntityById<Element>(elementId)?.Decays == true;
@@ -114,7 +135,10 @@ namespace MarginaliaMod
                 left -= spent;
             }
             if (left > HalfTick)
+            {
                 heart.Beat(left + HalfTick, 0f);
+                Table.Invalidate();
+            }
         }
 
         // Called before every Heart beat could happen: from FixedUpdate, and from
@@ -184,11 +208,8 @@ namespace MarginaliaMod
             stop = false;
             Marks.Clear();
             Seen.Clear();
-            foreach (var sphere in FucineRoot.Get().Spheres)
-            {
-                if (sphere.TokenHeartbeatIntervalMultiplier > -1f)
-                    Scan(sphere, sphere.TokenHeartbeatIntervalMultiplier, budget);
-            }
+            foreach (var placed in Table.Tokens())
+                Consider(placed.Token, placed.Rate, budget);
             foreach (var gone in Watches.Keys.Where(p => !Seen.Contains(p)).ToList())
                 Watches.Remove(gone);
             if (Marks.Count == 0)
@@ -197,16 +218,19 @@ namespace MarginaliaMod
             float soonest = Marks.Min(m => m.Seconds);
             var reached = Marks.Where(m => m.Seconds <= soonest + 0.001f).ToList();
             if (soonest > 0f)
+            {
                 heart.Beat(soonest + HalfTick, 0f);
+                Table.Invalidate();
+            }
 
             foreach (var mark in reached)
             {
                 if (mark.OnlyIfEnded && !HasEnded((Situation)mark.Payload))
                     continue;
                 if (!stop)
-                    PauseRing.Clear();
+                    TokenRing.Clear(RingGroup);
                 stop = true;
-                PauseRing.Show(mark.Token);
+                TokenRing.Show(mark.Token, RingGroup, IsPaused);
                 Watches[mark.Payload] = new Watch { LastSeen = Remaining(mark.Payload), Paused = true };
                 NoonUtility.Log("Marginalia: paused for " + mark.Payload.Id);
             }
@@ -216,31 +240,108 @@ namespace MarginaliaMod
         private static bool HasEnded(Situation situation) =>
             situation.Token == null || situation.Token.Defunct || situation.StateIdentifier != StateEnum.Ongoing;
 
-        // Walks spheres and tokens the way the Heart spends time on them, with rate the
-        // product of the sphere multipliers on the way down.
-        private static void Scan(Sphere sphere, float rate, float budget)
+        // rate is how fast the token's timer runs, as the Heart spends time on it.
+        private static void Consider(Token token, float rate, float budget)
         {
-            if (rate <= 0f || sphere.Shrouded)
+            var payload = token.Payload;
+            Seen.Add(payload);
+            if (rate <= 0f || token.Defunct)
                 return;
-            foreach (var token in sphere.Tokens)
+            float toMark = ToMark(payload, out bool onlyIfEnded);
+            if (float.IsNaN(toMark))
+                return;
+            var watch = Observe(payload);
+            if (toMark <= HalfTick)
             {
-                var payload = token.Payload;
-                Seen.Add(payload);
-                float toMark = ToMark(payload, out bool onlyIfEnded);
-                if (!float.IsNaN(toMark))
-                {
-                    var watch = Observe(payload);
-                    if (toMark <= HalfTick)
-                    {
-                        if (!watch.Paused)
-                            Marks.Add(new Mark { Seconds = 0f, Token = token, Payload = payload });
-                    }
-                    else if (toMark / rate <= budget)
-                        Marks.Add(new Mark { Seconds = toMark / rate, Token = token, Payload = payload, OnlyIfEnded = onlyIfEnded });
-                }
-                foreach (var inner in payload.GetSpheres())
-                    Scan(inner, rate * inner.TokenHeartbeatIntervalMultiplier, budget);
+                if (!watch.Paused)
+                    Marks.Add(new Mark { Seconds = 0f, Token = token, Payload = payload });
             }
+            else if (toMark / rate <= budget)
+            {
+                Marks.Add(new Mark { Seconds = toMark / rate, Token = token, Payload = payload, OnlyIfEnded = onlyIfEnded });
+            }
+        }
+
+        // Whether this card or verb is one we'd pause for as its timer runs down.
+        public static bool Pauses(ITokenPayload payload) => !float.IsNaN(ToMark(payload, out _));
+
+        private const string RingGroup = "pause";
+
+        private static bool IsPaused()
+        {
+            var heart = Watchman.Exists<Heart>() ? Watchman.Get<Heart>() : null;
+            return heart != null && heart.IsPaused();
+        }
+
+        // ---- Pausing when cards appear ------------------------------------------------
+
+        // A new game or a loaded save fills the table over a moment, which isn't its cards
+        // appearing, so counts only start to matter this long after.
+        private const float SettleSeconds = 3f;
+
+        private static FucineRoot _countedRoot;
+        private static float _settledAt;
+        private static Dictionary<string, int> _counts = new Dictionary<string, int>();
+        private static Dictionary<string, HashSet<Token>> _holders = new Dictionary<string, HashSet<Token>>();
+
+        // Called every frame. Counts each watched kind of card wherever the player can see
+        // or reach it (the table, verbs, the hand), and pauses when a count goes up: a new
+        // card, or a stack growing. Cards appear within a beat, so this is as soon as it
+        // can be.
+        public static void CheckAppearances()
+        {
+            if (!_entries.Keys.Any(k => k.StartsWith(AppearsPrefix)) || !Watchman.Exists<Heart>())
+                return;
+            var heart = Watchman.Get<Heart>();
+            var root = FucineRoot.Get();
+            if (heart == null || root == null)
+                return;
+            if (root != _countedRoot)
+            {
+                _countedRoot = root;
+                _settledAt = Time.unscaledTime + SettleSeconds;
+            }
+
+            var counts = new Dictionary<string, int>();
+            var holders = new Dictionary<string, HashSet<Token>>();
+            foreach (var placed in Table.Tokens())
+            {
+                if (placed.Hidden || !(placed.Token.Payload is ElementStack stack) ||
+                    !_entries.ContainsKey(AppearsPrefix + stack.Element.Id))
+                    continue;
+                string id = stack.Element.Id;
+                counts[id] = (counts.TryGetValue(id, out int count) ? count : 0) + stack.Quantity;
+                if (!holders.TryGetValue(id, out var tokens))
+                    holders[id] = tokens = new HashSet<Token>();
+                tokens.Add(placed.Token);
+            }
+
+            var arrived = new List<Token>();
+            if (Time.unscaledTime >= _settledAt)
+            {
+                foreach (var pair in _entries.Where(e => e.Key.StartsWith(AppearsPrefix)))
+                {
+                    string id = pair.Key.Substring(AppearsPrefix.Length);
+                    int now = counts.TryGetValue(id, out int n) ? n : 0;
+                    int before = _counts.TryGetValue(id, out int b) ? b : 0;
+                    if (now <= before)
+                        continue;
+                    // Ring the new cards; if a stack just grew, ring every stack of them.
+                    var all = holders[id];
+                    var fresh = _holders.TryGetValue(id, out var old) ? all.Where(t => !old.Contains(t)).ToList() : all.ToList();
+                    arrived.AddRange(fresh.Count > 0 ? fresh : all);
+                    NoonUtility.Log("Marginalia: paused as a new " + (pair.Value.Label ?? id) + " appeared");
+                }
+            }
+            _counts = counts;
+            _holders = holders;
+
+            if (arrived.Count == 0)
+                return;
+            if (!heart.IsPaused())
+                Watchman.Get<LocalNexus>().PauseGame(true);
+            TokenRing.Clear(RingGroup);
+            TokenRing.Show(arrived, RingGroup, IsPaused);
         }
 
         private static Watch Observe(ITokenPayload payload)
@@ -297,7 +398,13 @@ namespace MarginaliaMod
                 leads.Add(s);
             for (float s = 3.5f; s <= 10f; s += 0.5f)
                 leads.Add(s);
-            for (int s = 11; s <= 35; s++)
+            for (int s = 11; s <= 30; s++)
+                leads.Add(s);
+            for (int s = 35; s <= 60; s += 5)
+                leads.Add(s);
+            for (int s = 70; s <= 110; s += 10)
+                leads.Add(s);
+            for (int s = 135; s <= 185; s += 25)
                 leads.Add(s);
             return leads.ToArray();
         }
@@ -327,7 +434,7 @@ namespace MarginaliaMod
             ContextMenuRegistry.Register(new ContextMenuItem
             {
                 Id = "pause.end",
-                Order = 21,
+                Order = 22,
                 Label = t => PauseWatch.Get(t)?.AtEnd == true ? "Stop pausing at the end" : "Pause at the end",
                 IsVisible = t => t.Kind == TargetKind.Verb,
                 Execute = t =>
@@ -341,10 +448,24 @@ namespace MarginaliaMod
             ContextMenuRegistry.Register(new ContextMenuItem
             {
                 Id = "pause.remove",
-                Order = 22,
-                Label = _ => "Stop pausing",
+                Order = 21,
+                Label = t => t.Kind == TargetKind.Verb ? "Stop pausing at every step" : "Stop pausing before it decays",
                 IsVisible = t => PauseWatch.Get(t) is PauseWatch.Entry e && !e.AtEnd,
                 Execute = PauseWatch.Remove
+            });
+            ContextMenuRegistry.Register(new ContextMenuItem
+            {
+                Id = "pause.appears",
+                Order = 23,
+                Label = t => PauseWatch.GetAppears(t) != null ? "Stop pausing when one appears" : "Pause when one appears",
+                IsVisible = t => t.Kind == TargetKind.Element,
+                Execute = t =>
+                {
+                    if (PauseWatch.GetAppears(t) != null)
+                        PauseWatch.RemoveAppears(t);
+                    else
+                        PauseWatch.SetAppears(t);
+                }
             });
 
             ContextMenuRegistry.Register(new ContextMenuItem

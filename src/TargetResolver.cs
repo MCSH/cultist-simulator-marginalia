@@ -109,6 +109,43 @@ namespace MarginaliaMod
             return null;
         }
 
+        // The menu for a card or verb token, or null for anything else.
+        public static MenuTarget ForToken(Token token)
+        {
+            if (token == null || token.Defunct)
+                return null;
+            switch (token.Payload)
+            {
+                case ElementStack stack:
+                    return ForElement(stack.Element);
+                case Situation situation:
+                    return ForVerb(situation.Verb);
+                default:
+                    return null;
+            }
+        }
+
+        // The aspect icon on top under the pointer, if that's what is there.
+        public static MenuTarget AspectAt(Vector2 screenPosition, Transform ignoreRoot, out ElementFrame frame)
+        {
+            frame = null;
+            var eventSystem = EventSystem.current;
+            if (eventSystem == null)
+                return null;
+            Hits.Clear();
+            eventSystem.RaycastAll(new PointerEventData(eventSystem) { position = screenPosition }, Hits);
+            foreach (var hit in Hits)
+            {
+                if (hit.gameObject == null || hit.gameObject.transform.IsChildOf(ignoreRoot))
+                    continue;
+                frame = hit.gameObject.GetComponentInParent<ElementFrame>();
+                if (frame == null || string.IsNullOrEmpty(frame.ElementId))
+                    return null;
+                return ForElement(Watchman.Get<Compendium>().GetEntityById<Element>(frame.ElementId));
+            }
+            return null;
+        }
+
         private static MenuTarget ForElement(Element element)
         {
             if (element == null || element is NullElement || string.IsNullOrEmpty(element.Id))
