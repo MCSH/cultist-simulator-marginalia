@@ -2,7 +2,7 @@
 
 # Marginalia
 
-A [Cultist Simulator](https://store.steampowered.com/app/718670/Cultist_Simulator/) DLL mod that adds a hidden context menu to cards, verbs, aspects and the board. You can attach a persistent note to any card, verb or aspect, write labels directly on the table, and draw rulers (card-sized grids and lines) to lay cards out by hand. It can also show the community wiki's article for any card, aspect or verb in an in-game window.
+A [Cultist Simulator](https://store.steampowered.com/app/718670/Cultist_Simulator/) DLL mod that adds a hidden context menu to cards, verbs, aspects and the board. You can attach a persistent note to any card, verb or aspect, write labels directly on the table, and draw rulers (card-sized grids and lines) to lay cards out by hand. It can also show the community wiki's article for any card, aspect or verb in an in-game window. And it can pause the game the moment a verb finishes, or just before a card decays.
 
 This is an unofficial fan mod. It isn't affiliated with Weather Factory or Fandom. It has only been tried on Linux (Steam), with game version 2026.1.g.2.
 
@@ -18,6 +18,12 @@ This is an unofficial fan mod. It isn't affiliated with Weather Factory or Fando
 - Pick **Write note…** or **Edit note…**. Press **Ctrl+Enter** to save the note (the button is labelled *Keep*) or **Esc** to discard it. **Erase note** deletes it.
 - If a note exists, the menu shows a preview of it.
 - **Open wiki** shows the item's [Cultist Simulator Wiki](https://cultistsimulator.fandom.com/) article in an in-game window, so it doesn't depend on Steam or a browser. The mod uses the wiki's API to find the best-matching title, fetch the article, and convert it to the game's text format. Links between articles work inside the window. Use **Back** (or the mouse back button) to return, and **Close**, **Esc** or a click outside to dismiss it. **Browser** opens the same article in the Steam overlay, or your system browser if the overlay is unavailable. Fandom's bare `?action=render` view keeps that fast. Images aren't shown, and very long articles are cut short with a pointer to the browser.
+
+Pausing:
+
+- On a verb, pick **Pause at every step** or **Pause at the end**. *At every step* pauses the moment the verb's timer runs out, including when its recipe leads straight into another. *At the end* only pauses when no recipe follows, so the results are waiting. Picking one turns the other off. Each stays on, every time, until you pick **Stop pausing at every step** or **Stop pausing at the end**.
+- On a card that decays, pick **Pause before it decays**. The game then pauses when any card of that kind has 0.1 seconds left, so you can still use it. Unpause and it decays as usual. **Stop pausing before it decays** turns it off.
+- The pause lands on the exact moment at any game speed. Everything else on the table has spent exactly as much time as the verb or card, no more.
 
 On the board:
 
@@ -37,7 +43,9 @@ While Alt is held, the game doesn't see your clicks, so Alt + right-click never 
 
 Notes are global: they are keyed by element or verb id and shared across all saves. Cards and aspects are both elements, so a note on the *Lantern* aspect is the same note wherever Lantern appears. Board labels and rulers are also global: they appear in every game.
 
-Notes are stored in `marginalia.json`, board labels in `marginalia_board.json` and rulers in `marginalia_rulers.json`, all in the game's save folder:
+Pausing choices are global too, keyed by verb or element id like notes.
+
+Notes are stored in `marginalia.json`, board labels in `marginalia_board.json`, rulers in `marginalia_rulers.json` and pausing choices in `marginalia_pauses.json`, all in the game's save folder:
 
 | OS | Save folder |
 | --- | --- |

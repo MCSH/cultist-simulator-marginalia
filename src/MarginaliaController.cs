@@ -241,8 +241,16 @@ namespace MarginaliaMod
             }
         }
 
+        private void FixedUpdate()
+        {
+            PauseWatch.Check();
+        }
+
         private void LateUpdate()
         {
+            // The game speed may have changed during Update, before the next beat.
+            PauseWatch.Check();
+
             // Clicking anywhere makes the EventSystem drop its selection, so re-assert it
             // every frame; keyboard input is processed before the next Update.
             var eventSystem = EventSystem.current;

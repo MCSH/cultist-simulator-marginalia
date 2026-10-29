@@ -14,9 +14,11 @@ public class Marginalia
             NoteStore.Load();
             BoardLabels.Load();
             Rulers.Load();
+            PauseWatch.Load();
             NoteMenuItems.Register();
             BoardMenuItems.Register();
             RulerMenuItems.Register();
+            PauseMenuItems.Register();
             WikiMenuItems.Register();
 
             var host = new GameObject("Marginalia");
