@@ -12,6 +12,6 @@ DEST="$MODS_DIR/Marginalia"
 dotnet build src/Marginalia.csproj -c Release -p:GameDir="$GAME_DIR" -nologo -v quiet
 
 mkdir -p "$DEST/dll"
-cp mod/synopsis.json "$DEST/"
+cp mod/synopsis.json mod/cover.png "$DEST/"
 cp src/bin/Release/Marginalia.dll "$DEST/dll/"
 echo "Installed to $DEST"
