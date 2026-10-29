@@ -1,8 +1,11 @@
 {
   "name": "Marginalia",
   "author": "Sajjad Heydari",
-  "version": "0.4.0",
-  "description": "A hidden context menu on cards, verbs, aspects and the board. Alt + right-click to write in the margins.",
-  "description_long": "Hold Alt and right-click any card, verb, aspect icon, or open verb/card/aspect window to open a hidden context menu. Write a persistent note for any element or verb, shared across all your saves, or Alt + right-click the bare table to write a label on the board itself (Alt + drag to move it). Notes and labels are kept in marginalia.json and marginalia_board.json next to your save files. The modifier can be changed by adding marginalia_modifier=ctrl (or shift) to config.ini.",
-  "tags": [ "Quality of Life", "UI" ]
+  "version": "0.5.0",
+  "description": "A hidden context menu on cards, verbs, aspects and the board: notes, board labels, rulers for laying out cards, and the wiki in game. Alt + right-click.",
+  "description_long": "A hidden context menu for Cultist Simulator. Hold [b]Alt[/b] and [b]right-click[/b] a card, verb, aspect icon, an open window, or the bare table.\n\n[b]Requires [url=https://steamcommunity.com/sharedfiles/filedetails/?id=2901287611]GHIRBI[/url][/b], because this is a DLL mod. Restart the game after enabling it.\n\n[h2]Notes[/h2]\n[list]\n[*]Write a persistent note on any card, verb or aspect. Notes are shared across all your saves.\n[*]The menu previews the note. Ctrl+Enter keeps it, Esc discards it.\n[/list]\n\n[h2]Board labels[/h2]\n[list]\n[*]Alt + right-click the table and pick [i]Write on the board…[/i]. The text sits under the cards and pans and zooms with the table.\n[*]Alt + right-click a label to edit, resize or rub it out. Alt + left-drag to move it.\n[/list]\n\n[h2]Rulers[/h2]\n[list]\n[*]Alt + right-click the table and pick [i]Add grid…[/i], [i]Add line (H)…[/i] or [i]Add line (V)…[/i]. Sliders set the size in cards.\n[*]Grids are card-sized cells; lines are ticked every card width or height. Rulers snap so their cells line up with where the game snaps cards.\n[*]They never move or sort your cards. They're only guides for laying things out by hand.\n[*]Alt + right-click a ruler to resize or remove it. Alt + left-drag to move it.\n[/list]\n\n[h2]Wiki[/h2]\n[list]\n[*][i]Open wiki[/i] shows the item's Cultist Simulator Wiki article in an in-game window, with working links and a Back button. [i]Browser[/i] opens it in the Steam overlay. Needs an internet connection.\n[/list]\n\n[h2]Details[/h2]\nNotes, labels and rulers are stored in marginalia.json, marginalia_board.json and marginalia_rulers.json next to your save files. To use a different modifier, add marginalia_modifier=ctrl (or shift) to config.ini. Some Linux window managers grab Alt + right-drag; try ctrl if the menu never appears.\n\nUnofficial fan mod, not affiliated with Weather Factory or Fandom. Source: [url=https://github.com/MCSH/cultist-simulator-marginalia]github.com/MCSH/cultist-simulator-marginalia[/url]",
+  "tags": [
+    "Quality of Life",
+    "UI"
+  ]
 }
