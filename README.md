@@ -6,7 +6,7 @@ A [Cultist Simulator](https://store.steampowered.com/app/718670/Cultist_Simulato
 
 This is an unofficial fan mod. It isn't affiliated with Weather Factory or Fandom. It has only been tried on Linux (Steam), with game version 2026.1.g.2.
 
-![The board with rulers: grids around the stats and lines under the lore, followers and verbs, plus the board menu](docs/rulers.png)
+![The board with rulers: grids around the stats and lines under the lore, followers and verbs, plus the board menu](docs/rulers.jpg)
 
 | A note on a verb | Writing a note | The wiki, in game |
 | --- | --- | --- |
