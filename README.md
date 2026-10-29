@@ -58,6 +58,8 @@ Some Linux window managers grab Alt + right-drag. If the menu never appears, try
 
 ## Build and install
 
+The easiest way to get it is to subscribe on the [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3829272802), along with [GHIRBI](https://steamcommunity.com/sharedfiles/filedetails/?id=2901287611). To build it yourself instead:
+
 No prebuilt DLL is checked in, so you need to build it. This requires the [.NET SDK](https://dotnet.microsoft.com/download). The project targets net472 and compiles against the game's own assemblies, so the game must be installed.
 
 On Linux, `install.sh` builds the mod and copies it into the local mods folder:
