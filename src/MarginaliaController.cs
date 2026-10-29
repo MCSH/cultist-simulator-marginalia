@@ -11,8 +11,8 @@ using UnityEngine.UI;
 
 namespace MarginaliaMod
 {
-    // Owns the hidden context menu, the text editor, the wiki window, and dragging
-    // board labels.
+    // Owns the hidden context menu, the text editor, the slider dialog, the wiki
+    // window, and dragging board labels and rulers.
     //
     // Input: holding the modifier (Alt by default) raises an invisible full-screen
     // "shield" canvas above the game's UI, so a modifier+right-click never reaches the
@@ -28,6 +28,7 @@ namespace MarginaliaMod
         private const float MenuWidth = 300f;
         private const float EditorWidth = 600f;
         private const float EditorHeight = 400f;
+        private const float SizerWidth = 360f;
 
         public static MarginaliaController Instance { get; private set; }
 
@@ -52,12 +53,33 @@ namespace MarginaliaMod
         private bool _focusEditor;
         private Vector2 _editorScroll;
 
-        private BoardLabels.Data _dragLabel;
-        private Vector2 _dragOffset;
+        private sealed class SizerState
+        {
+            public string Title;
+            public string Subtitle;
+            public List<SizerField> Fields;
+            public Action OnChange;
+            public Action OnKeep;
+            public Action OnCancel;
+            public Action OnErase;
+        }
+
+        private SizerState _sizer;
+
+        // Something on the board being moved with modifier + left-drag.
+        private sealed class DragState
+        {
+            public Vector2 Offset;
+            public Func<bool> Alive;
+            public Action<Vector2> MoveTo;
+            public Action Done;
+        }
+
+        private DragState _drag;
 
         private WikiWindow _wiki;
 
-        private bool IsModal => _menuTarget != null || _editor != null || _wiki.IsOpen;
+        private bool IsModal => _menuTarget != null || _editor != null || _sizer != null || _wiki.IsOpen;
 
         private void Awake()
         {
@@ -139,12 +161,13 @@ namespace MarginaliaMod
                 return;
 
             BoardLabels.Tick();
+            Rulers.Tick();
 
             bool modifierHeld = Modifier(keyboard).isPressed;
-            _shield.SetActive(modifierHeld || IsModal || _dragLabel != null);
+            _shield.SetActive(modifierHeld || IsModal || _drag != null);
             var position = mouse.position.ReadValue();
 
-            if (_dragLabel != null)
+            if (_drag != null)
             {
                 ContinueDrag(mouse, position);
                 return;
@@ -159,7 +182,7 @@ namespace MarginaliaMod
                 return;
             }
 
-            if (modifierHeld && _editor == null && mouse.rightButton.wasPressedThisFrame)
+            if (modifierHeld && _editor == null && _sizer == null && mouse.rightButton.wasPressedThisFrame)
             {
                 var target = TargetResolver.At(position, _shield.transform);
                 if (target != null)
@@ -173,33 +196,48 @@ namespace MarginaliaMod
             }
         }
 
-        // ---- Moving board labels (modifier + left-drag) ---------------------------------
+        // ---- Moving board labels and rulers (modifier + left-drag) ----------------------
 
         private void TryStartDrag(Vector2 position)
         {
             var target = TargetResolver.At(position, _shield.transform);
-            if (target == null || target.Kind != TargetKind.BoardLabel)
+            if (target == null || !BoardLabels.ScreenToBoard(position, out var pointer))
                 return;
-            var label = BoardLabels.Get(target.Id);
-            if (label == null || !BoardLabels.ScreenToBoard(position, out var pointer))
-                return;
-            _dragLabel = label;
-            _dragOffset = new Vector2(label.X, label.Y) - pointer;
+            if (target.Kind == TargetKind.BoardLabel && BoardLabels.Get(target.Id) is BoardLabels.Data label)
+            {
+                _drag = new DragState
+                {
+                    Offset = new Vector2(label.X, label.Y) - pointer,
+                    Alive = () => BoardLabels.Get(label.Id) != null,
+                    MoveTo = p => BoardLabels.Move(label, p),
+                    Done = BoardLabels.Save
+                };
+            }
+            else if (target.Kind == TargetKind.Ruler && Rulers.Get(target.Id) is Rulers.Data ruler)
+            {
+                _drag = new DragState
+                {
+                    Offset = Rulers.Corner(ruler) - pointer,
+                    Alive = () => Rulers.Get(ruler.Id) != null,
+                    MoveTo = p => Rulers.Move(ruler, p),
+                    Done = Rulers.Save
+                };
+            }
         }
 
         private void ContinueDrag(Mouse mouse, Vector2 position)
         {
-            if (!BoardLabels.IsAttached || BoardLabels.Get(_dragLabel.Id) == null)
+            if (!BoardLabels.IsAttached || !_drag.Alive())
             {
-                _dragLabel = null;
+                _drag = null;
                 return;
             }
             if (BoardLabels.ScreenToBoard(position, out var pointer))
-                BoardLabels.Move(_dragLabel, pointer + _dragOffset);
+                _drag.MoveTo(pointer + _drag.Offset);
             if (!mouse.leftButton.isPressed)
             {
-                _dragLabel = null;
-                BoardLabels.Save();
+                _drag.Done();
+                _drag = null;
             }
         }
 
@@ -257,6 +295,31 @@ namespace MarginaliaMod
             _focusEditor = true;
         }
 
+        // A small modal with an integer slider per field. onChange runs whenever a value
+        // moves, so the caller can preview it; onErase, if given, adds a Remove button.
+        public void OpenSizer(string title, string subtitle, List<SizerField> fields,
+            Action onChange, Action onKeep, Action onCancel, Action onErase = null)
+        {
+            CloseMenu();
+            _sizer = new SizerState
+            {
+                Title = title,
+                Subtitle = subtitle,
+                Fields = fields,
+                OnChange = onChange,
+                OnKeep = onKeep,
+                OnCancel = onCancel,
+                OnErase = onErase
+            };
+        }
+
+        private void FinishSizer(Func<SizerState, Action> pick)
+        {
+            var sizer = _sizer;
+            _sizer = null;
+            pick(sizer)?.Invoke();
+        }
+
         private void CloseEditor()
         {
             _editor = null;
@@ -292,6 +355,8 @@ namespace MarginaliaMod
 
             if (_editor != null)
                 DrawEditor(screen);
+            else if (_sizer != null)
+                DrawSizer(screen);
             else
                 DrawMenu(screen, scale);
         }
@@ -438,10 +503,121 @@ namespace MarginaliaMod
                 KeepEditor();
         }
 
+        // No dimming: the board stays visible so the thing being sized can be watched.
+        private void DrawSizer(Rect screen)
+        {
+            var e = Event.current;
+            if (e.type == EventType.KeyDown)
+            {
+                if (e.keyCode == KeyCode.Escape)
+                {
+                    FinishSizer(s => s.OnCancel);
+                    e.Use();
+                    return;
+                }
+                if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter)
+                {
+                    FinishSizer(s => s.OnKeep);
+                    e.Use();
+                    return;
+                }
+            }
+
+            const float pad = 16f;
+            const float rowH = 34f;
+            float inner = SizerWidth - pad * 2f;
+            var title = new GUIContent(_sizer.Title);
+            var subtitle = new GUIContent(_sizer.Subtitle);
+            float titleH = Styles.Title.CalcHeight(title, inner);
+            float subtitleH = Styles.Subtitle.CalcHeight(subtitle, inner);
+            float height = pad + titleH + subtitleH + 10f + _sizer.Fields.Count * rowH + 10f + Styles.Button.fixedHeight + pad;
+
+            // Top centre, out of the way of the table where the ruler is.
+            var rect = new Rect((screen.width - SizerWidth) / 2f, 80f, SizerWidth, height);
+            GUI.Box(rect, GUIContent.none, Styles.Panel);
+
+            float x = rect.x + pad;
+            float y = rect.y + pad;
+            GUI.Label(new Rect(x, y, inner, titleH), title, Styles.Title);
+            y += titleH;
+            GUI.Label(new Rect(x, y, inner, subtitleH), subtitle, Styles.Subtitle);
+            y += subtitleH + 10f;
+
+            bool changed = false;
+            const float labelW = 60f, buttonW = 26f, valueW = 34f;
+            foreach (var field in _sizer.Fields)
+            {
+                float cy = y + (rowH - buttonW) / 2f;
+                GUI.Label(new Rect(x, y, labelW, rowH), field.Label, Styles.SizerLabel);
+                float sx = x + labelW;
+                int value = field.Value;
+                if (GUI.Button(new Rect(sx, cy, buttonW, buttonW), "-", Styles.Button))
+                    value--;
+                float sliderX = sx + buttonW + 8f;
+                float sliderW = inner - labelW - buttonW * 2f - valueW - 16f;
+                GUI.Box(new Rect(sliderX, y + rowH / 2f - 1f, sliderW, 2f), GUIContent.none, Styles.Rule);
+                value = Mathf.RoundToInt(GUI.HorizontalSlider(new Rect(sliderX, cy, sliderW, buttonW), value, field.Min, field.Max,
+                    GUIStyle.none, Styles.Thumb));
+                if (GUI.Button(new Rect(sliderX + sliderW + 8f, cy, buttonW, buttonW), "+", Styles.Button))
+                    value++;
+                GUI.Label(new Rect(x + inner - valueW, y, valueW, rowH), value.ToString(), Styles.SizerValue);
+
+                value = Mathf.Clamp(value, field.Min, field.Max);
+                if (value != field.Value)
+                {
+                    field.Value = value;
+                    changed = true;
+                }
+                y += rowH;
+            }
+            if (changed)
+                _sizer.OnChange();
+
+            y += 10f;
+            float bw = 90f, bh = Styles.Button.fixedHeight;
+            float bx = rect.xMax - pad - bw;
+            if (GUI.Button(new Rect(bx, y, bw, bh), "Keep", Styles.Button))
+            {
+                FinishSizer(s => s.OnKeep);
+                return;
+            }
+            bx -= bw + 6f;
+            if (GUI.Button(new Rect(bx, y, bw, bh), "Cancel", Styles.Button))
+            {
+                FinishSizer(s => s.OnCancel);
+                return;
+            }
+            bx -= bw + 6f;
+            if (_sizer.OnErase != null && GUI.Button(new Rect(bx, y, bw, bh), "Remove", Styles.Button))
+            {
+                FinishSizer(s => s.OnErase);
+                return;
+            }
+            if (bx - x > 60f)
+                GUI.Label(new Rect(x, y, bx - x - 6f, bh), "Enter · Esc", Styles.Hint);
+        }
+
         private static string Truncate(string text, int max)
         {
             text = text.Trim();
             return text.Length <= max ? text : text.Substring(0, max).TrimEnd() + "…";
+        }
+    }
+
+    // One integer slider in the sizer dialog.
+    public sealed class SizerField
+    {
+        public readonly string Label;
+        public readonly int Min;
+        public readonly int Max;
+        public int Value;
+
+        public SizerField(string label, int value, int min, int max)
+        {
+            Label = label;
+            Value = value;
+            Min = min;
+            Max = max;
         }
     }
 

@@ -101,7 +101,7 @@ namespace MarginaliaMod
 
         // Just above the table background if it lives under the sphere, otherwise at
         // the very back; either way, beneath every card and verb.
-        private static int SiblingIndexAboveBackground(Transform sphere)
+        internal static int SiblingIndexAboveBackground(Transform sphere)
         {
             var background = sphere.GetComponentInChildren<TabletopBackground>(true);
             if (background == null)
@@ -251,7 +251,7 @@ namespace MarginaliaMod
                 Id = "board.add",
                 Order = 0,
                 Label = _ => "Write on the board…",
-                IsVisible = t => t.Kind == TargetKind.Board,
+                IsVisible = t => t.Kind == TargetKind.Board || t.Kind == TargetKind.Ruler,
                 Execute = t => MarginaliaController.Instance.OpenEditor(
                     "New board label", "Written where you clicked", "",
                     text => BoardLabels.Add(text, t.BoardPosition))

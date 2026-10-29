@@ -38,8 +38,8 @@ namespace MarginaliaMod
                 var target = Resolve(hit.gameObject);
                 if (target != null)
                     return target;
-                // Nothing in front of the table claimed the click. Labels aren't raycast
-                // targets (cards must drop through them), so hit-test them by hand.
+                // Nothing in front of the table claimed the click. Labels and rulers aren't
+                // raycast targets (cards must drop through them), so hit-test them by hand.
                 if (IsBoard(hit.gameObject))
                     return BoardTarget(screenPosition);
             }
@@ -61,7 +61,10 @@ namespace MarginaliaMod
             var label = BoardLabels.LabelAt(screenPosition);
             if (label != null)
                 return MenuTarget.ForBoardLabel(label);
-            return BoardLabels.ScreenToBoard(screenPosition, out var position) ? MenuTarget.ForBoard(position) : null;
+            if (!BoardLabels.ScreenToBoard(screenPosition, out var position))
+                return null;
+            var ruler = Rulers.RulerAt(screenPosition);
+            return ruler != null ? MenuTarget.ForRuler(ruler, position) : MenuTarget.ForBoard(position);
         }
 
         private static string Path(GameObject go)

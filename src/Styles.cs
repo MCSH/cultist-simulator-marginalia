@@ -12,7 +12,7 @@ namespace MarginaliaMod
         private static readonly Color Faded = new Color(0.66f, 0.6f, 0.5f, 1f);
         private static readonly Color Ember = new Color(0.32f, 0.22f, 0.11f, 1f);
 
-        public static GUIStyle Panel, Dim, Rule, Title, Subtitle, Preview, Item, Field, TextArea, Button, Hint;
+        public static GUIStyle Panel, Dim, Rule, Title, Subtitle, Preview, Item, Field, TextArea, Button, Hint, SizerLabel, SizerValue, Thumb;
 
         public static void Ensure()
         {
@@ -66,6 +66,19 @@ namespace MarginaliaMod
             Hint = Text(12, Faded, UnityEngine.FontStyle.Italic);
             Hint.alignment = TextAnchor.MiddleLeft;
             Hint.fixedHeight = 30f;
+
+            SizerLabel = Text(15, Parchment, UnityEngine.FontStyle.Normal);
+            SizerLabel.alignment = TextAnchor.MiddleLeft;
+            SizerValue = Text(17, Parchment, UnityEngine.FontStyle.Bold);
+            SizerValue.alignment = TextAnchor.MiddleRight;
+            Thumb = new GUIStyle
+            {
+                normal = { background = Bordered(Brass, Parchment) },
+                hover = { background = Bordered(Parchment, Brass) },
+                active = { background = Bordered(Parchment, Brass) },
+                border = new RectOffset(1, 1, 1, 1),
+                fixedWidth = 12f
+            };
         }
 
         private static GUIStyle Text(int size, Color color, UnityEngine.FontStyle fontStyle)

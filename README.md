@@ -19,11 +19,19 @@ On the board:
 - **Alt + right-click** a label to **Edit**, make it **Larger** or **Smaller** (the menu stays open so you can click repeatedly), or **Rub out** (delete) it.
 - **Alt + left-drag** a label to move it.
 
+Rulers, for laying cards out by hand:
+
+- **Alt + right-click** the table and pick **Add grid…**, **Add line (H)…** or **Add line (V)…**. Sliders set the grid's width and height in cards, or the line's length in card widths (H) or card heights (V). The ruler updates as you drag the sliders. **Enter** keeps it and **Esc** cancels.
+- A grid is a frame split into card-sized cells by dashed lines. A line has a tick at every card width or height.
+- Rulers snap so their cells line up with where the game snaps cards, using the grid snap setting in the game's options.
+- **Alt + right-click** a ruler to **Resize** or **Remove** it. Everything else on the board menu works inside a grid too. **Alt + left-drag** a ruler to move it.
+- Rulers never move or sort cards. They are only guides drawn beneath the cards and labels.
+
 While Alt is held, the game doesn't see your clicks, so Alt + right-click never sends a card to a verb or toggles a window. Game hotkeys are off while the menu, editor or wiki window is open.
 
-Notes are global: they are keyed by element or verb id and shared across all saves. Cards and aspects are both elements, so a note on the *Lantern* aspect is the same note wherever Lantern appears. Board labels are also global: the same labels appear in every game.
+Notes are global: they are keyed by element or verb id and shared across all saves. Cards and aspects are both elements, so a note on the *Lantern* aspect is the same note wherever Lantern appears. Board labels and rulers are also global: they appear in every game.
 
-Notes are stored in `marginalia.json` and board labels in `marginalia_board.json`, both in the game's save folder:
+Notes are stored in `marginalia.json`, board labels in `marginalia_board.json` and rulers in `marginalia_rulers.json`, all in the game's save folder:
 
 | OS | Save folder |
 | --- | --- |
@@ -97,6 +105,7 @@ ContextMenuRegistry.Register(new ContextMenuItem
 | `src/ContextMenuRegistry.cs` | Menu item registry and the note items |
 | `src/NoteStore.cs` | Reads and writes `marginalia.json` |
 | `src/BoardLabels.cs` | Board labels: storage, tabletop TextMeshPro views, and their menu items |
+| `src/Rulers.cs` | Rulers (grids and lines): storage, snapping, drawing, and their menu items |
 | `src/JsonFile.cs` | Atomic JSON writes |
 | `src/Wiki.cs` | Wiki API client: title lookup, article fetch and cache, browser fallback, and the *Open wiki* menu item |
 | `src/WikiHtml.cs` | Converts article HTML into TextMeshPro rich text with clickable links |
