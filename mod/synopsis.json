@@ -1,0 +1,8 @@
+{
+  "name": "Marginalia",
+  "author": "Sajjad Heydari",
+  "version": "0.1.0",
+  "description": "A hidden context menu on cards, verbs and aspects. Alt + right-click to write a note in the margins.",
+  "description_long": "Hold Alt and right-click any card, verb, aspect icon, or open verb/card/aspect window to open a hidden context menu. For now the menu holds one thing: a persistent note for that element or verb, shared across all your saves. Notes are kept in marginalia.json next to your save files. The modifier can be changed by adding marginalia_modifier=ctrl (or shift) to config.ini.",
+  "tags": [ "Quality of Life", "UI" ]
+}

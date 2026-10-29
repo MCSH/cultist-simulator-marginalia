@@ -1,0 +1,28 @@
+using System;
+using MarginaliaMod;
+using SecretHistories.UI;
+using UnityEngine;
+
+// Entry point. The game looks for a type named after the mod (sans spaces) with a
+// public static Initialise(). It runs once when the app starts, before any scene loads.
+public class Marginalia
+{
+    public static void Initialise()
+    {
+        try
+        {
+            NoteStore.Load();
+            NoteMenuItems.Register();
+
+            var host = new GameObject("Marginalia");
+            UnityEngine.Object.DontDestroyOnLoad(host);
+            host.AddComponent<MarginaliaController>();
+
+            NoonUtility.Log("Marginalia: initialised (Alt + right-click a card, verb or aspect).");
+        }
+        catch (Exception ex)
+        {
+            NoonUtility.LogWarning("Marginalia: failed to initialise: " + ex);
+        }
+    }
+}
