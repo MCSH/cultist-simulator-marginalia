@@ -552,7 +552,8 @@ namespace MarginaliaMod
             y += subtitleH + 10f;
 
             bool changed = false;
-            const float labelW = 60f, buttonW = 26f, valueW = 34f;
+            const float labelW = 60f, buttonW = 26f;
+            float valueW = _sizer.Fields.Any(f => f.Format != null) ? 64f : 34f;
             foreach (var field in _sizer.Fields)
             {
                 float cy = y + (rowH - buttonW) / 2f;
@@ -568,9 +569,9 @@ namespace MarginaliaMod
                     GUIStyle.none, Styles.Thumb));
                 if (GUI.Button(new Rect(sliderX + sliderW + 8f, cy, buttonW, buttonW), "+", Styles.Button))
                     value++;
-                GUI.Label(new Rect(x + inner - valueW, y, valueW, rowH), value.ToString(), Styles.SizerValue);
-
                 value = Mathf.Clamp(value, field.Min, field.Max);
+                GUI.Label(new Rect(x + inner - valueW, y, valueW, rowH), field.Format?.Invoke(value) ?? value.ToString(), Styles.SizerValue);
+
                 if (value != field.Value)
                 {
                     field.Value = value;
@@ -619,6 +620,9 @@ namespace MarginaliaMod
         public readonly int Min;
         public readonly int Max;
         public int Value;
+
+        // Shows the value as something else, e.g. when it indexes a list of stops.
+        public Func<int, string> Format;
 
         public SizerField(string label, int value, int min, int max)
         {

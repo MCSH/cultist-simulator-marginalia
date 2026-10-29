@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Newtonsoft.Json;
 using SecretHistories.Spheres;
 using SecretHistories.UI;
 using TMPro;
@@ -54,17 +53,7 @@ namespace MarginaliaMod
 
         public static void Load()
         {
-            try
-            {
-                if (File.Exists(FilePath))
-                    _labels = JsonConvert.DeserializeObject<List<Data>>(File.ReadAllText(FilePath)) ?? new List<Data>();
-            }
-            catch (Exception ex)
-            {
-                NoonUtility.LogWarning("Marginalia: could not read " + FilePath + ": " + ex.Message);
-                JsonFile.Backup(FilePath);
-                _labels = new List<Data>();
-            }
+            _labels = JsonFile.Read(FilePath, new List<Data>());
         }
 
         public static void Save()

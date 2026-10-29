@@ -56,17 +56,7 @@ namespace MarginaliaMod
 
         public static void Load()
         {
-            try
-            {
-                if (File.Exists(FilePath))
-                    _rulers = JsonConvert.DeserializeObject<List<Data>>(File.ReadAllText(FilePath)) ?? new List<Data>();
-            }
-            catch (Exception ex)
-            {
-                NoonUtility.LogWarning("Marginalia: could not read " + FilePath + ": " + ex.Message);
-                JsonFile.Backup(FilePath);
-                _rulers = new List<Data>();
-            }
+            _rulers = JsonFile.Read(FilePath, new List<Data>());
         }
 
         public static void Save()

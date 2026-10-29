@@ -21,9 +21,18 @@ This is an unofficial fan mod. It isn't affiliated with Weather Factory or Fando
 
 Pausing:
 
-- On a verb, pick **Pause at every step** or **Pause at the end**. *At every step* pauses the moment the verb's timer runs out, including when its recipe leads straight into another. *At the end* only pauses when no recipe follows, so the results are waiting. Picking one turns the other off. Each stays on, every time, until you pick **Stop pausing at every step** or **Stop pausing at the end**.
-- On a card that decays, pick **Pause before it decays**. The game then pauses when any card of that kind has 0.1 seconds left, so you can still use it. Unpause and it decays as usual. **Stop pausing before it decays** turns it off.
+| A verb has finished | A card is about to decay |
+| --- | --- |
+| ![Paused the moment Explore finished, with a gold ring around the verb](docs/pause.jpg) | ![Paused with 0.1 s left on Mme Bechet, with a gold ring around the card](docs/pause-card.png) |
+
+- On a card that decays, pick **Pause before it decays…**. It applies to every card of that kind.
+- On a verb, pick **Pause at every step…** to pause each time its timer runs out, including when its recipe leads straight into another.
+- Both open a slider for how long before the timer runs out to pause, from **0 s** (right after it ends or decays) up to **35 s**. The steps are fine near zero and coarser further out. It opens on the current setting, or on 0.1 s for a card and 0 s for a verb. **Enter** keeps it. Pick the item again to change it, or pick **Stop pausing**.
+- **Pause at the end** on a verb pauses right after a recipe that nothing follows, so the results are waiting. It has no slider: whether another recipe follows is only settled once one ends. Pick **Stop pausing at the end** to turn it off. A verb pauses either at every step or at the end, not both.
+- If a timer starts with less time than the slider's setting, the game pauses as soon as it appears.
 - The pause lands on the exact moment at any game speed. Everything else on the table has spent exactly as much time as the verb or card, no more.
+- A gold ring pulses around whatever caused the pause until you unpause. If it's a card inside a closed verb window, the ring goes around the verb.
+- **Step time 0.1 s forward** on the board menu pauses the game if needed, then moves it on by a tenth of a second. The menu stays open, so you can click it repeatedly. It still stops at any of the marks above.
 
 On the board:
 
@@ -52,6 +61,8 @@ Notes are stored in `marginalia.json`, board labels in `marginalia_board.json`, 
 | Linux | `~/.config/unity3d/Weather Factory/Cultist Simulator/` |
 | Windows | `%USERPROFILE%\AppData\LocalLow\Weather Factory\Cultist Simulator\` |
 | macOS | `~/Library/Application Support/Weather Factory/Cultist Simulator/` |
+
+If one of these files can't be read, for example after a hand edit with a typo, the mod leaves it untouched and doesn't save changes to it until it's fixed. The game's log says which file it was.
 
 The wiki window needs an internet connection. Notes and labels don't.
 
