@@ -1,6 +1,6 @@
 # Marginalia
 
-A Cultist Simulator DLL mod that adds a hidden context menu to cards, verbs and aspects. For now the menu has one feature: a persistent note for each of them.
+A Cultist Simulator DLL mod that adds a hidden context menu to cards, verbs, aspects and the board. You can attach a persistent note to any card, verb or aspect, and write labels directly on the table.
 
 ## Use
 
@@ -8,9 +8,15 @@ A Cultist Simulator DLL mod that adds a hidden context menu to cards, verbs and 
 - Pick **Write note…** or **Edit note…**. Press **Ctrl+Enter** to save the note (the button is labelled *Keep*) or **Esc** to discard it. **Erase note** deletes it.
 - If a note exists, the menu shows a preview of it.
 
+On the board:
+
+- **Alt + right-click** empty table, then pick **Write on the board…**. The text appears where you clicked, under the cards, and moves with the table when you pan and zoom.
+- **Alt + right-click** a label to **Edit**, make it **Larger** or **Smaller** (the menu stays open so you can click repeatedly), or **Rub out** (delete) it.
+- **Alt + left-drag** a label to move it.
+
 While Alt is held, the game doesn't see your clicks, so Alt + right-click never sends a card to a verb or toggles a window. Game hotkeys are off while the menu or editor is open.
 
-Notes are global: they are keyed by element or verb id and shared across all saves. Cards and aspects are both elements, so a note on the *Lantern* aspect is the same note wherever Lantern appears. Notes are stored in `marginalia.json` next to the save files (`~/.config/unity3d/Weather Factory/Cultist Simulator/` on Linux).
+Notes are global: they are keyed by element or verb id and shared across all saves. Cards and aspects are both elements, so a note on the *Lantern* aspect is the same note wherever Lantern appears. Notes are stored in `marginalia.json` next to the save files (`~/.config/unity3d/Weather Factory/Cultist Simulator/` on Linux). Board labels are also global (the same labels appear in every game) and are stored in `marginalia_board.json` in the same folder.
 
 To use a different modifier, add one of these lines to `config.ini` in the same folder:
 
@@ -52,9 +58,12 @@ ContextMenuRegistry.Register(new ContextMenuItem
 | File | Purpose |
 | --- | --- |
 | `src/Marginalia.cs` | Entry point (`Marginalia.Initialise`) that the game's mod loader calls |
-| `src/MarginaliaController.cs` | Input shield, hotkey suppression, IMGUI menu and editor |
-| `src/TargetResolver.cs` | Works out which card, verb or aspect is under the pointer |
+| `src/MarginaliaController.cs` | Input shield, hotkey suppression, IMGUI menu and editor, label dragging |
+| `src/TargetResolver.cs` | Works out which card, verb, aspect, board label or board spot is under the pointer |
+| `src/MenuTarget.cs` | The thing a menu was opened on |
 | `src/ContextMenuRegistry.cs` | Menu item registry and the note items |
 | `src/NoteStore.cs` | Reads and writes `marginalia.json` |
+| `src/BoardLabels.cs` | Board labels: storage, tabletop TextMeshPro views, and their menu items |
+| `src/JsonFile.cs` | Atomic JSON writes |
 | `src/Styles.cs` | IMGUI look |
 | `mod/synopsis.json` | Mod metadata |

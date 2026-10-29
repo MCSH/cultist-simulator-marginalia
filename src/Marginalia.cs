@@ -12,13 +12,15 @@ public class Marginalia
         try
         {
             NoteStore.Load();
+            BoardLabels.Load();
             NoteMenuItems.Register();
+            BoardMenuItems.Register();
 
             var host = new GameObject("Marginalia");
             UnityEngine.Object.DontDestroyOnLoad(host);
             host.AddComponent<MarginaliaController>();
 
-            NoonUtility.Log("Marginalia: initialised (Alt + right-click a card, verb or aspect).");
+            NoonUtility.Log("Marginalia: initialised (Alt + right-click a card, verb, aspect or the board).");
         }
         catch (Exception ex)
         {

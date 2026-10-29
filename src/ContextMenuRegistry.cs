@@ -8,9 +8,12 @@ namespace MarginaliaMod
     {
         public string Id;
         public int Order;
-        public Func<NoteTarget, string> Label;
-        public Func<NoteTarget, bool> IsVisible = _ => true;
-        public Action<NoteTarget> Execute;
+        public Func<MenuTarget, string> Label;
+        public Func<MenuTarget, bool> IsVisible = _ => true;
+        public Action<MenuTarget> Execute;
+
+        // Leave the menu open after running, e.g. for repeatable tweaks like resizing.
+        public bool KeepOpen;
     }
 
     // Everything that shows up in the context menu is registered here, so new
@@ -25,7 +28,7 @@ namespace MarginaliaMod
             Items.Add(item);
         }
 
-        public static IEnumerable<ContextMenuItem> ItemsFor(NoteTarget target)
+        public static IEnumerable<ContextMenuItem> ItemsFor(MenuTarget target)
         {
             return Items.Where(i => i.IsVisible(target)).OrderBy(i => i.Order);
         }
@@ -40,14 +43,18 @@ namespace MarginaliaMod
                 Id = "note.edit",
                 Order = 0,
                 Label = t => NoteStore.Has(t) ? "Edit note…" : "Write note…",
-                Execute = t => MarginaliaController.Instance.OpenEditor(t)
+                IsVisible = t => t.CanHaveNote,
+                Execute = t => MarginaliaController.Instance.OpenEditor(
+                    t.Label, t.Subtitle, NoteStore.Get(t),
+                    text => NoteStore.Set(t, text),
+                    NoteStore.Has(t) ? () => NoteStore.Delete(t) : (Action)null)
             });
             ContextMenuRegistry.Register(new ContextMenuItem
             {
                 Id = "note.delete",
                 Order = 10,
                 Label = _ => "Erase note",
-                IsVisible = NoteStore.Has,
+                IsVisible = t => t.CanHaveNote && NoteStore.Has(t),
                 Execute = NoteStore.Delete
             });
         }

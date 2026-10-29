@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using SecretHistories.Entities;
 using SecretHistories.Entities.NullEntities;
+using SecretHistories.Spheres;
 using SecretHistories.UI;
 using SecretHistories.UI.Aspects;
 using UnityEngine;
@@ -9,8 +10,8 @@ using UnityEngine.EventSystems;
 
 namespace MarginaliaMod
 {
-    // Works out what's under the pointer: a card or verb token, an aspect icon, or an
-    // open verb / card / aspect details window.
+    // Works out what's under the pointer: a card or verb token, an aspect icon, an
+    // open verb / card / aspect details window, or the bare table (and its labels).
     public static class TargetResolver
     {
         private const BindingFlags Instance = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
@@ -21,7 +22,7 @@ namespace MarginaliaMod
 
         private static readonly List<RaycastResult> Hits = new List<RaycastResult>();
 
-        public static NoteTarget At(Vector2 screenPosition, Transform ignoreRoot)
+        public static MenuTarget At(Vector2 screenPosition, Transform ignoreRoot)
         {
             var eventSystem = EventSystem.current;
             if (eventSystem == null)
@@ -37,11 +38,41 @@ namespace MarginaliaMod
                 var target = Resolve(hit.gameObject);
                 if (target != null)
                     return target;
+                // Nothing in front of the table claimed the click. Labels aren't raycast
+                // targets (cards must drop through them), so hit-test them by hand.
+                if (IsBoard(hit.gameObject))
+                    return BoardTarget(screenPosition);
             }
+
+            if (Hits.Count > 0)
+                NoonUtility.Log("Marginalia: nothing to annotate under pointer; top hit was " + Path(Hits[0].gameObject));
             return null;
         }
 
-        private static NoteTarget Resolve(GameObject go)
+        private static bool IsBoard(GameObject go)
+        {
+            return go.GetComponentInParent<TabletopBackground>() != null ||
+                   go.GetComponentInParent<CameraDragRect>() != null ||
+                   go.GetComponentInParent<TabletopSphere>() != null;
+        }
+
+        private static MenuTarget BoardTarget(Vector2 screenPosition)
+        {
+            var label = BoardLabels.LabelAt(screenPosition);
+            if (label != null)
+                return MenuTarget.ForBoardLabel(label);
+            return BoardLabels.ScreenToBoard(screenPosition, out var position) ? MenuTarget.ForBoard(position) : null;
+        }
+
+        private static string Path(GameObject go)
+        {
+            var path = go.name;
+            for (var t = go.transform.parent; t != null; t = t.parent)
+                path = t.name + "/" + path;
+            return path;
+        }
+
+        private static MenuTarget Resolve(GameObject go)
         {
             // Aspect icons sit inside tokens and windows, so check them first.
             var frame = go.GetComponentInParent<ElementFrame>();
@@ -75,18 +106,18 @@ namespace MarginaliaMod
             return null;
         }
 
-        private static NoteTarget ForElement(Element element)
+        private static MenuTarget ForElement(Element element)
         {
             if (element == null || element is NullElement || string.IsNullOrEmpty(element.Id))
                 return null;
-            return new NoteTarget(TargetKind.Element, element.Id, element.Label);
+            return MenuTarget.ForElement(element.Id, element.Label);
         }
 
-        private static NoteTarget ForVerb(Verb verb)
+        private static MenuTarget ForVerb(Verb verb)
         {
             if (verb == null || verb is NullVerb || string.IsNullOrEmpty(verb.Id))
                 return null;
-            return new NoteTarget(TargetKind.Verb, verb.Id, verb.Label);
+            return MenuTarget.ForVerb(verb.Id, verb.Label);
         }
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using SecretHistories.Services;
@@ -10,7 +11,7 @@ using UnityEngine.UI;
 
 namespace MarginaliaMod
 {
-    // Owns the hidden context menu and the note editor.
+    // Owns the hidden context menu, the text editor, and dragging board labels.
     //
     // Input: holding the modifier (Alt by default) raises an invisible full-screen
     // "shield" canvas above the game's UI, so a modifier+right-click never reaches the
@@ -33,17 +34,27 @@ namespace MarginaliaMod
         private GameObject _focusSink;
         private ButtonControl _modifier;
 
-        private NoteTarget _menuTarget;
+        private MenuTarget _menuTarget;
         private Vector2 _menuScreenPos;
         private List<ContextMenuItem> _menuItems;
 
-        private NoteTarget _editorTarget;
-        private string _editorText;
-        private bool _editorHadNote;
+        private sealed class EditorState
+        {
+            public string Title;
+            public string Subtitle;
+            public string Text;
+            public Action<string> OnKeep;
+            public Action OnErase;
+        }
+
+        private EditorState _editor;
         private bool _focusEditor;
         private Vector2 _editorScroll;
 
-        private bool IsModal => _menuTarget != null || _editorTarget != null;
+        private BoardLabels.Data _dragLabel;
+        private Vector2 _dragOffset;
+
+        private bool IsModal => _menuTarget != null || _editor != null;
 
         private void Awake()
         {
@@ -114,17 +125,59 @@ namespace MarginaliaMod
             if (keyboard == null || mouse == null)
                 return;
 
-            bool modifierHeld = Modifier(keyboard).isPressed;
-            _shield.SetActive(modifierHeld || IsModal);
+            BoardLabels.Tick();
 
-            if (modifierHeld && _editorTarget == null && mouse.rightButton.wasPressedThisFrame)
+            bool modifierHeld = Modifier(keyboard).isPressed;
+            _shield.SetActive(modifierHeld || IsModal || _dragLabel != null);
+            var position = mouse.position.ReadValue();
+
+            if (_dragLabel != null)
             {
-                var position = mouse.position.ReadValue();
+                ContinueDrag(mouse, position);
+                return;
+            }
+
+            if (modifierHeld && _editor == null && mouse.rightButton.wasPressedThisFrame)
+            {
                 var target = TargetResolver.At(position, _shield.transform);
                 if (target != null)
                     OpenMenu(target, position);
                 else
                     CloseMenu();
+            }
+            else if (modifierHeld && !IsModal && mouse.leftButton.wasPressedThisFrame)
+            {
+                TryStartDrag(position);
+            }
+        }
+
+        // ---- Moving board labels (modifier + left-drag) ---------------------------------
+
+        private void TryStartDrag(Vector2 position)
+        {
+            var target = TargetResolver.At(position, _shield.transform);
+            if (target == null || target.Kind != TargetKind.BoardLabel)
+                return;
+            var label = BoardLabels.Get(target.Id);
+            if (label == null || !BoardLabels.ScreenToBoard(position, out var pointer))
+                return;
+            _dragLabel = label;
+            _dragOffset = new Vector2(label.X, label.Y) - pointer;
+        }
+
+        private void ContinueDrag(Mouse mouse, Vector2 position)
+        {
+            if (!BoardLabels.IsAttached || BoardLabels.Get(_dragLabel.Id) == null)
+            {
+                _dragLabel = null;
+                return;
+            }
+            if (BoardLabels.ScreenToBoard(position, out var pointer))
+                BoardLabels.Move(_dragLabel, pointer + _dragOffset);
+            if (!mouse.leftButton.isPressed)
+            {
+                _dragLabel = null;
+                BoardLabels.Save();
             }
         }
 
@@ -146,7 +199,7 @@ namespace MarginaliaMod
             }
         }
 
-        public void OpenMenu(NoteTarget target, Vector2 screenPosition)
+        public void OpenMenu(MenuTarget target, Vector2 screenPosition)
         {
             _menuTarget = target;
             _menuScreenPos = screenPosition;
@@ -159,27 +212,41 @@ namespace MarginaliaMod
             _menuItems = null;
         }
 
-        public void OpenEditor(NoteTarget target)
+        // A modal multi-line text editor. onKeep receives the text (possibly empty);
+        // onErase, if given, adds an Erase button.
+        public void OpenEditor(string title, string subtitle, string text, Action<string> onKeep, Action onErase = null)
         {
             CloseMenu();
-            _editorTarget = target;
-            _editorText = NoteStore.Get(target) ?? "";
-            _editorHadNote = _editorText.Length > 0;
+            _editor = new EditorState
+            {
+                Title = title,
+                Subtitle = subtitle,
+                Text = text ?? "",
+                OnKeep = onKeep,
+                OnErase = onErase
+            };
             _editorScroll = Vector2.zero;
             _focusEditor = true;
         }
 
         private void CloseEditor()
         {
-            _editorTarget = null;
-            _editorText = null;
+            _editor = null;
             GUIUtility.keyboardControl = 0;
         }
 
-        private void SaveEditor()
+        private void KeepEditor()
         {
-            NoteStore.Set(_editorTarget, _editorText);
+            var editor = _editor;
             CloseEditor();
+            editor.OnKeep(editor.Text);
+        }
+
+        private void EraseEditor()
+        {
+            var editor = _editor;
+            CloseEditor();
+            editor.OnErase();
         }
 
         // ---- IMGUI ------------------------------------------------------------------
@@ -195,7 +262,7 @@ namespace MarginaliaMod
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
             var screen = new Rect(0f, 0f, Screen.width / scale, Screen.height / scale);
 
-            if (_editorTarget != null)
+            if (_editor != null)
                 DrawEditor(screen);
             else
                 DrawMenu(screen, scale);
@@ -208,8 +275,8 @@ namespace MarginaliaMod
             float inner = MenuWidth - pad * 2f;
 
             var title = new GUIContent(_menuTarget.Label);
-            var subtitle = new GUIContent(_menuTarget.KindLabel + " · " + _menuTarget.Id);
-            string note = NoteStore.Get(_menuTarget);
+            var subtitle = new GUIContent(_menuTarget.Subtitle);
+            string note = _menuTarget.CanHaveNote ? NoteStore.Get(_menuTarget) : null;
             var preview = string.IsNullOrEmpty(note) ? null : new GUIContent(Truncate(note, 240));
 
             float titleH = Styles.Title.CalcHeight(title, inner);
@@ -265,8 +332,16 @@ namespace MarginaliaMod
                 if (GUI.Button(new Rect(rect.x + 4f, y, MenuWidth - 8f, itemH), item.Label(_menuTarget), Styles.Item))
                 {
                     var target = _menuTarget;
-                    CloseMenu();
-                    item.Execute(target);
+                    if (item.KeepOpen)
+                    {
+                        item.Execute(target);
+                        _menuItems = ContextMenuRegistry.ItemsFor(target).ToList();
+                    }
+                    else
+                    {
+                        CloseMenu();
+                        item.Execute(target);
+                    }
                     return;
                 }
                 y += itemH;
@@ -289,7 +364,7 @@ namespace MarginaliaMod
                 bool enter = e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter || e.character == '\n';
                 if (enter && (e.control || e.command))
                 {
-                    SaveEditor();
+                    KeepEditor();
                     e.Use();
                     return;
                 }
@@ -302,13 +377,13 @@ namespace MarginaliaMod
             GUI.Box(rect, GUIContent.none, Styles.Panel);
 
             GUILayout.BeginArea(new Rect(rect.x + pad, rect.y + pad, rect.width - pad * 2f, rect.height - pad * 2f));
-            GUILayout.Label(_editorTarget.Label, Styles.Title);
-            GUILayout.Label(_editorTarget.KindLabel + " · " + _editorTarget.Id, Styles.Subtitle);
+            GUILayout.Label(_editor.Title, Styles.Title);
+            GUILayout.Label(_editor.Subtitle, Styles.Subtitle);
             GUILayout.Space(10f);
 
             _editorScroll = GUILayout.BeginScrollView(_editorScroll, false, true, GUIStyle.none, GUI.skin.verticalScrollbar, Styles.Field, GUILayout.ExpandHeight(true));
             GUI.SetNextControlName(NoteControlName);
-            _editorText = GUILayout.TextArea(_editorText, Styles.TextArea, GUILayout.ExpandHeight(true));
+            _editor.Text = GUILayout.TextArea(_editor.Text, Styles.TextArea, GUILayout.ExpandHeight(true));
             GUILayout.EndScrollView();
 
             if (_focusEditor && e.type == EventType.Repaint)
@@ -321,25 +396,18 @@ namespace MarginaliaMod
             GUILayout.BeginHorizontal();
             GUILayout.Label("Ctrl+Enter to keep · Esc to discard", Styles.Hint);
             GUILayout.FlexibleSpace();
-            bool erase = _editorHadNote && GUILayout.Button("Erase", Styles.Button, GUILayout.Width(90f));
+            bool erase = _editor.OnErase != null && GUILayout.Button("Erase", Styles.Button, GUILayout.Width(90f));
             bool cancel = GUILayout.Button("Cancel", Styles.Button, GUILayout.Width(90f));
             bool save = GUILayout.Button("Keep", Styles.Button, GUILayout.Width(90f));
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
 
             if (erase)
-            {
-                NoteStore.Delete(_editorTarget);
-                CloseEditor();
-            }
+                EraseEditor();
             else if (cancel)
-            {
                 CloseEditor();
-            }
             else if (save)
-            {
-                SaveEditor();
-            }
+                KeepEditor();
         }
 
         private static string Truncate(string text, int max)

@@ -33,65 +33,35 @@ namespace MarginaliaMod
             }
             catch (Exception ex)
             {
-                // Keep the unreadable file around rather than overwriting it on next save.
                 NoonUtility.LogWarning("Marginalia: could not read " + FilePath + ": " + ex.Message);
-                TryBackup();
+                JsonFile.Backup(FilePath);
                 _notes = new Dictionary<string, Entry>();
             }
         }
 
-        public static string Get(NoteTarget target)
+        public static string Get(MenuTarget target)
         {
-            return _notes.TryGetValue(target.Key, out var entry) ? entry.Text : null;
+            return _notes.TryGetValue(target.NoteKey, out var entry) ? entry.Text : null;
         }
 
-        public static bool Has(NoteTarget target)
+        public static bool Has(MenuTarget target)
         {
             return !string.IsNullOrEmpty(Get(target));
         }
 
-        public static void Set(NoteTarget target, string text)
+        public static void Set(MenuTarget target, string text)
         {
             if (string.IsNullOrWhiteSpace(text))
-                _notes.Remove(target.Key);
+                _notes.Remove(target.NoteKey);
             else
-                _notes[target.Key] = new Entry { Label = target.Label, Text = text, Updated = DateTime.UtcNow };
-            Save();
+                _notes[target.NoteKey] = new Entry { Label = target.Label, Text = text, Updated = DateTime.UtcNow };
+            JsonFile.Write(FilePath, _notes);
         }
 
-        public static void Delete(NoteTarget target)
+        public static void Delete(MenuTarget target)
         {
-            if (_notes.Remove(target.Key))
-                Save();
-        }
-
-        private static void Save()
-        {
-            try
-            {
-                var tmp = FilePath + ".tmp";
-                File.WriteAllText(tmp, JsonConvert.SerializeObject(_notes, Formatting.Indented));
-                if (File.Exists(FilePath))
-                    File.Replace(tmp, FilePath, null);
-                else
-                    File.Move(tmp, FilePath);
-            }
-            catch (Exception ex)
-            {
-                NoonUtility.LogWarning("Marginalia: could not write " + FilePath + ": " + ex.Message);
-            }
-        }
-
-        private static void TryBackup()
-        {
-            try
-            {
-                File.Copy(FilePath, FilePath + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"), true);
-            }
-            catch (Exception)
-            {
-                // Nothing more we can do.
-            }
+            if (_notes.Remove(target.NoteKey))
+                JsonFile.Write(FilePath, _notes);
         }
     }
 }
