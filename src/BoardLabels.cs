@@ -49,8 +49,6 @@ namespace MarginaliaMod
         private static readonly Dictionary<string, View> Views = new Dictionary<string, View>();
         private static RectTransform _root;
         private static float _nextSphereSearch;
-        private static TMP_FontAsset _font;
-        private static Sprite _panelSprite;
 
         public static string FilePath => Path.Combine(Application.persistentDataPath, "marginalia_board.json");
 
@@ -192,7 +190,7 @@ namespace MarginaliaMod
             panelObject.layer = _root.gameObject.layer;
             panelObject.transform.SetParent(_root, false);
             var panel = panelObject.AddComponent<Image>();
-            panel.sprite = PanelSprite();
+            panel.sprite = UiKit.Panel(PanelFill, PanelEdge);
             panel.type = Image.Type.Sliced;
             panel.pixelsPerUnitMultiplier = 0.5f; // 1px sprite edge -> 2 table units
             panel.color = Color.white;
@@ -202,7 +200,7 @@ namespace MarginaliaMod
             textObject.layer = panelObject.layer;
             textObject.transform.SetParent(panelObject.transform, false);
             var text = textObject.AddComponent<TextMeshProUGUI>();
-            var font = Font();
+            var font = UiKit.Font();
             if (font != null)
                 text.font = font;
             text.raycastTarget = false;
@@ -233,42 +231,12 @@ namespace MarginaliaMod
             view.Panel.localPosition = new Vector2(label.X, label.Y);
         }
 
-        // 3x3 texture with a 1px edge, nine-sliced so the edge stays thin at any size.
-        private static Sprite PanelSprite()
-        {
-            if (_panelSprite != null)
-                return _panelSprite;
-            var tex = new Texture2D(3, 3) { hideFlags = HideFlags.HideAndDontSave, filterMode = FilterMode.Point };
-            for (int x = 0; x < 3; x++)
-                for (int y = 0; y < 3; y++)
-                    tex.SetPixel(x, y, x == 1 && y == 1 ? PanelFill : PanelEdge);
-            tex.Apply();
-            _panelSprite = Sprite.Create(tex, new Rect(0f, 0f, 3f, 3f), new Vector2(0.5f, 0.5f), 100f, 0,
-                SpriteMeshType.FullRect, new Vector4(1f, 1f, 1f, 1f));
-            _panelSprite.hideFlags = HideFlags.HideAndDontSave;
-            return _panelSprite;
-        }
-
         private static Camera Camera()
         {
             var canvas = _root.GetComponentInParent<Canvas>()?.rootCanvas;
             if (canvas == null || canvas.renderMode == RenderMode.ScreenSpaceOverlay)
                 return null;
             return canvas.worldCamera;
-        }
-
-        // The game ships Philosopher for Latin scripts; fall back to TMP's default.
-        private static TMP_FontAsset Font()
-        {
-            if (_font != null)
-                return _font;
-            var fonts = Resources.FindObjectsOfTypeAll<TMP_FontAsset>();
-            _font = fonts.FirstOrDefault(f => f.name.IndexOf("Philosopher", StringComparison.OrdinalIgnoreCase) >= 0)
-                    ?? TMP_Settings.defaultFontAsset
-                    ?? fonts.FirstOrDefault();
-            NoonUtility.Log("Marginalia: board label font " + (_font != null ? _font.name : "(none)") +
-                            "; available: " + string.Join(", ", fonts.Select(f => f.name)));
-            return _font;
         }
     }
 

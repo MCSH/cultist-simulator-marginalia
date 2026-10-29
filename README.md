@@ -7,7 +7,7 @@ A Cultist Simulator DLL mod that adds a hidden context menu to cards, verbs, asp
 - Hold **Alt** and **right-click** a card, a verb, an aspect icon, or an open verb, card or aspect window.
 - Pick **Write note…** or **Edit note…**. Press **Ctrl+Enter** to save the note (the button is labelled *Keep*) or **Esc** to discard it. **Erase note** deletes it.
 - If a note exists, the menu shows a preview of it.
-- **Open wiki** opens the item's article on the [Cultist Simulator Wiki](https://cultistsimulator.fandom.com/), in the Steam overlay browser (or your system browser if the overlay is unavailable). The mod asks the wiki's search API for the best-matching title, then opens Fandom's bare article view (`?action=render`), which skips the slow site chrome, scripts and ads. If the lookup fails, it opens the full site's search instead.
+- **Open wiki** shows the item's [Cultist Simulator Wiki](https://cultistsimulator.fandom.com/) article in an in-game window, so it doesn't depend on Steam or a browser. The mod uses the wiki's API to find the best-matching title, fetch the article, and convert it to the game's text format. Links between articles work inside the window. Use **Back** (or the mouse back button) to return, and **Close**, **Esc** or a click outside to dismiss it. **Browser** opens the same article in the Steam overlay, or your system browser if the overlay is unavailable. Fandom's bare `?action=render` view keeps that fast. Images aren't shown, and very long articles are cut short with a pointer to the browser.
 
 On the board:
 
@@ -66,6 +66,9 @@ ContextMenuRegistry.Register(new ContextMenuItem
 | `src/NoteStore.cs` | Reads and writes `marginalia.json` |
 | `src/BoardLabels.cs` | Board labels: storage, tabletop TextMeshPro views, and their menu items |
 | `src/JsonFile.cs` | Atomic JSON writes |
-| `src/Wiki.cs` | The *Open wiki* item: builds the wiki URL and opens it in the Steam overlay or the system browser |
+| `src/Wiki.cs` | Wiki API client: title lookup, article fetch and cache, browser fallback, and the *Open wiki* menu item |
+| `src/WikiHtml.cs` | Converts article HTML into TextMeshPro rich text with clickable links |
+| `src/WikiWindow.cs` | The in-game wiki reader (uGUI on the shield canvas) |
+| `src/UiKit.cs` | Shared font, nine-sliced panels and layout helpers for the uGUI parts |
 | `src/Styles.cs` | IMGUI look |
 | `mod/synopsis.json` | Mod metadata |

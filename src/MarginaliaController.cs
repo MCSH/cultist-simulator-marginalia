@@ -11,7 +11,8 @@ using UnityEngine.UI;
 
 namespace MarginaliaMod
 {
-    // Owns the hidden context menu, the text editor, and dragging board labels.
+    // Owns the hidden context menu, the text editor, the wiki window, and dragging
+    // board labels.
     //
     // Input: holding the modifier (Alt by default) raises an invisible full-screen
     // "shield" canvas above the game's UI, so a modifier+right-click never reaches the
@@ -54,7 +55,9 @@ namespace MarginaliaMod
         private BoardLabels.Data _dragLabel;
         private Vector2 _dragOffset;
 
-        private bool IsModal => _menuTarget != null || _editor != null;
+        private WikiWindow _wiki;
+
+        private bool IsModal => _menuTarget != null || _editor != null || _wiki.IsOpen;
 
         private void Awake()
         {
@@ -71,6 +74,11 @@ namespace MarginaliaMod
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = short.MaxValue;
             _shield.AddComponent<GraphicRaycaster>();
+            // uGUI windows on the shield are laid out for 1080p and scale with the screen.
+            var scaler = _shield.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 1f;
 
             var blocker = new GameObject("Blocker");
             blocker.transform.SetParent(_shield.transform, false);
@@ -81,7 +89,12 @@ namespace MarginaliaMod
             rect.offsetMax = Vector2.zero;
             // Fully transparent, but still a raycast target.
             blocker.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
+            // Clicking outside an open window dismisses it.
+            var backdrop = blocker.AddComponent<ShieldBlocker>();
+            backdrop.CanDismiss = () => _wiki.IsOpen;
+            backdrop.Dismiss = () => _wiki.Close();
 
+            _wiki = WikiWindow.Create(_shield.transform);
             _shield.SetActive(false);
         }
 
@@ -134,6 +147,15 @@ namespace MarginaliaMod
             if (_dragLabel != null)
             {
                 ContinueDrag(mouse, position);
+                return;
+            }
+
+            if (_wiki.IsOpen)
+            {
+                if (keyboard.escapeKey.wasPressedThisFrame)
+                    _wiki.Close();
+                else if (mouse.backButton.wasPressedThisFrame)
+                    _wiki.Back();
                 return;
             }
 
@@ -197,6 +219,12 @@ namespace MarginaliaMod
             {
                 eventSystem.SetSelectedGameObject(null);
             }
+        }
+
+        public void OpenWiki(MenuTarget target)
+        {
+            CloseMenu();
+            _wiki.OpenFor(Wiki.CleanName(target.Label));
         }
 
         public void OpenMenu(MenuTarget target, Vector2 screenPosition)
@@ -414,6 +442,29 @@ namespace MarginaliaMod
         {
             text = text.Trim();
             return text.Length <= max ? text : text.Substring(0, max).TrimEnd() + "…";
+        }
+    }
+
+    // The shield's full-screen backdrop: a click outside an open window dismisses it.
+    // Only clicks that *started* while the window was open count, so the click that
+    // opened it (from the IMGUI menu, which uGUI sees as a backdrop click) can't close it.
+    internal class ShieldBlocker : MonoBehaviour, IPointerDownHandler, IPointerClickHandler
+    {
+        public Func<bool> CanDismiss;
+        public Action Dismiss;
+
+        private bool _armed;
+
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            _armed = CanDismiss();
+        }
+
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            if (_armed && CanDismiss())
+                Dismiss();
+            _armed = false;
         }
     }
 }

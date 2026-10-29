@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 using SecretHistories.UI;
@@ -9,67 +10,180 @@ using UnityEngine.Networking;
 
 namespace MarginaliaMod
 {
-    // Opens the community wiki for a card, aspect or verb, in the Steam overlay browser
-    // when it's available and the system browser otherwise (GOG, overlay disabled).
-    //
-    // Fandom's full pages are slow, so we ask the wiki's search API for the best-matching
-    // title and open that article with ?action=render: just the article HTML, no skin,
-    // scripts or ads. If the lookup fails we fall back to the full site's search, which
-    // jumps to an exactly-titled article or shows results.
+    // Talks to the community wiki's MediaWiki API: finds the article for an in-game
+    // name, fetches it, and converts it for the in-game wiki window. Results are cached
+    // for the session.
     public static class Wiki
     {
+        public sealed class Article
+        {
+            public string Title;
+            public string Body;
+        }
+
         private const string Site = "https://cultistsimulator.fandom.com";
-        private const int LookupTimeoutSeconds = 4;
+        private const string Api = Site + "/api.php?format=json&formatversion=2";
+        private const int TimeoutSeconds = 8;
+
+        // TMP meshes top out around 16k characters; very long articles get cut short.
+        private const int MaxBodyLength = 15000;
 
         private static readonly Regex Markup = new Regex("<[^>]*>");
+        private static readonly Dictionary<string, string> Titles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, Article> Articles = new Dictionary<string, Article>(StringComparer.OrdinalIgnoreCase);
 
-        public static void Open(MenuTarget target)
+        public static string CleanName(string label)
         {
-            MarginaliaController.Instance.StartCoroutine(OpenRoutine(Markup.Replace(target.Label, "").Trim()));
+            return Markup.Replace(label ?? "", "").Trim();
         }
 
-        private static IEnumerator OpenRoutine(string name)
+        // Best-matching article title for an in-game name, or null if the wiki has none.
+        public static IEnumerator FindTitle(string name, Action<string, string> done)
         {
-            string url = SearchPageUrl(name);
-            string lookup = Site + "/api.php?action=opensearch&format=json&limit=1&redirects=resolve&search=" +
-                            Uri.EscapeDataString(name);
-
-            using (var request = UnityWebRequest.Get(lookup))
+            if (Titles.TryGetValue(name, out var cached))
             {
-                request.timeout = LookupTimeoutSeconds;
-                yield return request.SendWebRequest();
-
-                if (request.result == UnityWebRequest.Result.Success)
-                {
-                    // opensearch replies [query, [titles], [descriptions], [urls]].
-                    try
-                    {
-                        var titles = JArray.Parse(request.downloadHandler.text)[1] as JArray;
-                        if (titles != null && titles.Count > 0)
-                            url = ArticleUrl((string)titles[0]);
-                    }
-                    catch (Exception ex)
-                    {
-                        NoonUtility.Log("Marginalia: unexpected wiki search reply for '" + name + "': " + ex.Message);
-                    }
-                }
-                else
-                {
-                    NoonUtility.Log("Marginalia: wiki search for '" + name + "' failed (" + request.error + "); opening the full site.");
-                }
+                done(cached, null);
+                yield break;
             }
 
-            OpenUrl(url);
+            JToken reply = null;
+            string error = null;
+            yield return GetJson(Api + "&action=opensearch&limit=1&redirects=resolve&search=" + Uri.EscapeDataString(name),
+                (json, err) => { reply = json; error = err; });
+            if (error != null)
+            {
+                done(null, error);
+                yield break;
+            }
+
+            // opensearch replies [query, [titles], [descriptions], [urls]].
+            var titles = reply is JArray array && array.Count > 1 ? array[1] as JArray : null;
+            var title = titles != null && titles.Count > 0 ? (string)titles[0] : null;
+            if (title != null)
+                Titles[name] = title;
+            done(title, null);
         }
 
-        private static string ArticleUrl(string title)
+        public static IEnumerator Fetch(string title, Action<Article, string> done)
         {
-            return Site + "/wiki/" + Uri.EscapeDataString(title.Replace(' ', '_')) + "?action=render";
+            if (Articles.TryGetValue(title, out var cached))
+            {
+                done(cached, null);
+                yield break;
+            }
+
+            JToken reply = null;
+            string error = null;
+            yield return GetJson(Api + "&action=parse&prop=text&redirects=1&disableeditsection=1&disabletoc=1&page=" + Uri.EscapeDataString(title),
+                (json, err) => { reply = json; error = err; });
+            if (error != null)
+            {
+                done(null, error);
+                yield break;
+            }
+
+            var apiError = reply?["error"]?["info"];
+            var parse = reply?["parse"];
+            if (apiError != null || parse == null)
+            {
+                done(null, apiError != null ? "The wiki says: " + apiError : "The wiki sent back something unexpected.");
+                yield break;
+            }
+
+            var resolvedTitle = (string)parse["title"] ?? title;
+            var html = (string)parse["text"] ?? "";
+
+            // A category page's own text is often just a line; its pages are the content.
+            string members = null;
+            if (resolvedTitle.StartsWith("Category:"))
+                yield return CategoryMembers(resolvedTitle, links => members = links);
+
+            Article article;
+            try
+            {
+                var body = WikiHtml.ToRichText(html);
+                if (!string.IsNullOrEmpty(members))
+                    body = (body + "\n\n" + members).Trim();
+                article = new Article { Title = resolvedTitle, Body = Truncate(body) };
+            }
+            catch (Exception ex)
+            {
+                NoonUtility.LogWarning("Marginalia: could not render wiki article '" + title + "': " + ex);
+                done(null, "This article couldn't be rendered in game. Try opening it in the browser.");
+                yield break;
+            }
+            Articles[title] = article;
+            Articles[article.Title] = article;
+            done(article, null);
         }
 
-        private static string SearchPageUrl(string name)
+        private static IEnumerator CategoryMembers(string category, Action<string> done)
         {
-            return Site + "/wiki/Special:Search?go=Go&search=" + Uri.EscapeDataString(name);
+            JToken reply = null;
+            yield return GetJson(Api + "&action=query&list=categorymembers&cmtype=page&cmlimit=200&cmtitle=" + Uri.EscapeDataString(category),
+                (json, err) => reply = json);
+            var pages = reply?["query"]?["categorymembers"] as JArray;
+            if (pages == null || pages.Count == 0)
+            {
+                done(null);
+                yield break;
+            }
+            var lines = new List<string> { "<size=118%><b><color=#B8944F>Pages in this category</color></b></size>" };
+            foreach (var page in pages)
+            {
+                var title = (string)page["title"];
+                if (!string.IsNullOrEmpty(title))
+                    lines.Add("• <link=\"" + title.Replace("\"", "'") + "\"><color=" + WikiHtml.LinkColor + ">" +
+                              title.Replace("<", "<\u200B") + "</color></link>");
+            }
+            done(string.Join("\n", lines));
+        }
+
+        private static IEnumerator GetJson(string url, Action<JToken, string> done)
+        {
+            using (var request = UnityWebRequest.Get(url))
+            {
+                request.timeout = TimeoutSeconds;
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    NoonUtility.Log("Marginalia: wiki request failed (" + request.error + "): " + url);
+                    done(null, "The wiki could not be reached (" + request.error + ").");
+                    yield break;
+                }
+                try
+                {
+                    done(JToken.Parse(request.downloadHandler.text), null);
+                }
+                catch (Exception ex)
+                {
+                    NoonUtility.Log("Marginalia: unreadable wiki reply from " + url + ": " + ex.Message);
+                    done(null, "The wiki sent back something unreadable.");
+                }
+            }
+        }
+
+        private static string Truncate(string body)
+        {
+            if (body.Length <= MaxBodyLength)
+                return body;
+            int cut = body.LastIndexOf('\n', MaxBodyLength);
+            return body.Substring(0, cut > 0 ? cut : MaxBodyLength).TrimEnd() +
+                   "\n\n<i><color=#A89980>The article goes on; open it in the browser to read the rest.</color></i>";
+        }
+
+        // ---- Browser fallback
+
+        // The bare ?action=render view skips Fandom's slow site chrome, scripts and ads.
+        public static void OpenInBrowser(string title)
+        {
+            OpenUrl(Site + "/wiki/" + Uri.EscapeDataString(title.Replace(' ', '_')) + "?action=render");
+        }
+
+        public static void SearchInBrowser(string name)
+        {
+            OpenUrl(Site + "/wiki/Special:Search?go=Go&search=" + Uri.EscapeDataString(name));
         }
 
         private static void OpenUrl(string url)
@@ -105,7 +219,7 @@ namespace MarginaliaMod
                 Order = 50,
                 Label = _ => "Open wiki",
                 IsVisible = t => t.Kind == TargetKind.Element || t.Kind == TargetKind.Verb,
-                Execute = Wiki.Open
+                Execute = t => MarginaliaController.Instance.OpenWiki(t)
             });
         }
     }
