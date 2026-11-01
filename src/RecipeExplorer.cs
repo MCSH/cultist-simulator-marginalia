@@ -54,6 +54,7 @@ namespace MarginaliaMod
             public List<Entry> Entries;
             public List<Entry> Visible;    // Entries less what the "discovered" toggle hides
             public bool Unfiltered;        // favourites: picked by hand, so always shown
+            public int HiddenCount;        // of its recipes, how many the player has hidden
         }
 
         // Something drawn in a row or the header: an icon (with a badge) or a bit of text.
@@ -119,7 +120,12 @@ namespace MarginaliaMod
         // reuses the rows' layouts rather than making them again.
         private static readonly Dictionary<Row, Entry> RowEntries = new Dictionary<Row, Entry>();
         private static int _discoveredHere;    // of the recipes here, how many are discovered
-        private static int _hiddenMatched;     // matches the "discovered" toggle hides
+        private static int _missedUndiscovered;   // matches the "discovered" toggle hides
+        private static int _missedHidden;         // matches that are hidden recipes
+        // Hidden recipes (HiddenRecipes) stay out of the lists unless this is on.
+        private static bool _showHidden;
+        private static int _hiddenVersion = -1;
+        private const float FooterH = 26f;
         private static float _layoutWidth;
         private static Layout _header;
         private static float _headerWidth;
@@ -142,7 +148,7 @@ namespace MarginaliaMod
 
         private static GUIStyle _windowTitle, _subtitle, _description, _rowTitle, _rowTitleFaded, _tag, _reason, _note, _arrow,
             _glyph, _small, _smallOn, _tabOn, _tabOff, _toggle, _count, _placeholder, _searchField, _tipStyle, _badgeBack, _leadFrame,
-            _groupFrame, _groupLabel, _groupCount;
+            _groupFrame, _groupLabel, _groupCount, _footer;
         private static readonly Dictionary<ChipKind, GUIStyle> IconStyles = new Dictionary<ChipKind, GUIStyle>();
         private static readonly Dictionary<ChipKind, GUIStyle> InertIconStyles = new Dictionary<ChipKind, GUIStyle>();
         private static readonly Dictionary<ChipKind, GUIStyle> TextChipStyles = new Dictionary<ChipKind, GUIStyle>();
@@ -324,14 +330,24 @@ namespace MarginaliaMod
         private static Entry EntryFor(Row row) =>
             RowEntries.TryGetValue(row, out var entry) ? entry : RowEntries[row] = new Entry { Row = row };
 
-        private static bool Visible(Entry entry) =>
-            !_discoveredOnly || entry.Row.Kind != RowKind.Recipe || Discovery.Has(entry.Row.Id);
+        // Recipes the player hid, and ones not yet discovered, are left out (unless asked for).
+        private static bool Visible(Entry entry)
+        {
+            if (entry.Row.Kind != RowKind.Recipe)
+                return true;
+            if (!_showHidden && HiddenRecipes.Has(entry.Row.Id))
+                return false;
+            return !_discoveredOnly || Discovery.Has(entry.Row.Id);
+        }
 
         private static List<Tab> BuildTabs(Page page)
         {
             var tabs = MakeTabs(page);
             foreach (var tab in tabs)
+            {
                 tab.Visible = tab.Unfiltered ? tab.Entries : tab.Entries.Where(Visible).ToList();
+                tab.HiddenCount = tab.Entries.Count(e => e.Row.Kind == RowKind.Recipe && HiddenRecipes.Has(e.Row.Id));
+            }
             return tabs;
         }
 
@@ -403,10 +419,16 @@ namespace MarginaliaMod
             var tab = _tabs[_page.Tab];
             var matches = tab.Visible.Where(e => RecipeIndex.Matches(e, terms)).ToList();
             _matched = matches.Count;
-            // Nothing found among what's shown: say whether the toggle hid some.
-            _hiddenMatched = matches.Count == 0 && tab.Visible.Count < tab.Entries.Count
-                ? tab.Entries.Count(e => RecipeIndex.Matches(e, terms))
-                : 0;
+            // Nothing found among what's shown: say whether the toggles left some out, and which.
+            _missedUndiscovered = _missedHidden = 0;
+            if (matches.Count == 0 && tab.Visible.Count < tab.Entries.Count)
+                foreach (var missed in tab.Entries.Where(e => !Visible(e) && RecipeIndex.Matches(e, terms)))
+                {
+                    if (HiddenRecipes.Has(missed.Row.Id))
+                        _missedHidden++;
+                    else
+                        _missedUndiscovered++;
+                }
             _shown = matches.Take(MaxShown).ToList();
         }
 
@@ -569,6 +591,14 @@ namespace MarginaliaMod
                     _shownKey = null;
                 }
             }
+            // A recipe hidden or shown again: the lists, and its row's button.
+            if (_hiddenVersion != HiddenRecipes.Version)
+            {
+                _hiddenVersion = HiddenRecipes.Version;
+                Relayout();
+                _tabs = BuildTabs(_page);
+                _shownKey = null;
+            }
             // A recipe finished while it's open: show it.
             if (_discoveryVersion != Discovery.Version)
             {
@@ -599,7 +629,8 @@ namespace MarginaliaMod
             y = DrawSearch(x, y, inner);
             y = DrawTabs(x, y, inner);
             GUI.Box(new Rect(x, y - 4f, inner, 1f), GUIContent.none, Styles.Rule);
-            DrawList(new Rect(x, y, inner, _rect.yMax - Pad - y));
+            DrawList(new Rect(x, y, inner, _rect.yMax - Pad - FooterH - 4f - y));
+            DrawFooter(x, _rect.yMax - Pad - FooterH, inner);
             DrawGrip();
             DrawTip(screen);
 
@@ -1022,19 +1053,53 @@ namespace MarginaliaMod
             GUI.enabled = wasEnabled;
         }
 
+        // Along the bottom: how many recipes here are hidden, and whether to show them.
+        private static void DrawFooter(float x, float y, float inner)
+        {
+            var tab = _tabs[_page.Tab];
+            const float buttonW = 96f;
+            float right = x + inner - GripSize;
+            GUI.Box(new Rect(x, y - 2f, inner, 1f), GUIContent.none, Styles.Rule);
+            if (Button(new Rect(right - buttonW, y + 2f, buttonW, FooterH - 4f), _showHidden ? "hide them" : "show hidden", _toggle,
+                    _showHidden
+                        ? "Hidden recipes are listed, faded. Click to leave them out again."
+                        : "Recipes you've hidden are left out of every list. Click to list them, faded, so you can unhide them."))
+                _pending = () =>
+                {
+                    _showHidden = !_showHidden;
+                    _tabs = BuildTabs(_page);
+                    _shownKey = null;
+                };
+            string text = tab.HiddenCount == 0
+                ? "Nothing hidden here" + (HiddenRecipes.Count > 0 ? " · " + HiddenRecipes.Count + " hidden in all" : "")
+                : tab.HiddenCount + " hidden here" + (tab.Unfiltered ? ", listed anyway as favourites" : "") +
+                  (HiddenRecipes.Count > tab.HiddenCount ? " · " + HiddenRecipes.Count + " in all" : "");
+            GUI.Label(new Rect(x, y, right - buttonW - x - 6f, FooterH), text, _footer);
+        }
+
         private static string EmptyText()
         {
             var tab = _tabs[_page.Tab];
-            if (_hiddenMatched > 0)
-                return "Nothing you've discovered matches; " + _hiddenMatched + " other" + (_hiddenMatched == 1 ? " does" : "s do") +
-                       ". Click “discovered” to see them.";
+            if (_missedUndiscovered + _missedHidden > 0)
+            {
+                var also = new List<string>();
+                if (_missedUndiscovered > 0)
+                    also.Add(_missedUndiscovered + " not yet discovered (click “discovered”)");
+                if (_missedHidden > 0)
+                    also.Add(_missedHidden + " hidden (click “show hidden” below)");
+                return "Nothing listed matches; " + string.Join(" and ", also) + " do.";
+            }
             if (tab.Visible.Count > 0)
                 return "Nothing matches that search.";
             if (_page.Kind == PageKind.Favourites)
                 return _tabs.Any(t => t.Entries.Count > 0)
                     ? "No " + tab.Title.ToLowerInvariant() + " starred."
                     : "Nothing starred yet. Star a recipe, card or aspect from its row or its page.";
-            return tab.Entries.Count > 0 ? "Nothing discovered here yet. Click “discovered” to see them all." : "Nothing here.";
+            if (tab.Entries.Count == 0)
+                return "Nothing here.";
+            return tab.HiddenCount > 0 && !_showHidden
+                ? "Everything here is hidden or not yet discovered: use “discovered” above or “show hidden” below."
+                : "Nothing discovered here yet. Click “discovered” to see them all.";
         }
 
         private static void DrawItems(Layout layout, float x, float y, bool hovered, bool tips)
@@ -1177,15 +1242,17 @@ namespace MarginaliaMod
                 x = tagW + 6f;
             }
 
-            var titleStyle = row.Kind == RowKind.Recipe && !row.Startable ? _rowTitleFaded : _rowTitle;
+            bool isRecipe = row.Kind == RowKind.Recipe;
+            bool hidden = isRecipe && HiddenRecipes.Has(row.Id);
+            var titleStyle = isRecipe && (!row.Startable || hidden) ? _rowTitleFaded : _rowTitle;
             bool hasButtons = row.Kind != RowKind.Change;
             var rowTarget = hasButtons ? NoteTarget(row) : null;
             bool starred = Favourites.Has(rowTarget);
             float fullW = titleStyle.CalcSize(new GUIContent(row.Title)).x;
-            // While hovered, the title stops short of the star, wiki and note buttons; a
-            // favourite's star always shows, so its title always does.
-            float hoverW = hasButtons ? Mathf.Max(20f, width - 110f - x) : 0f;
-            float titleW = Mathf.Min(fullW, starred ? hoverW : width - x);
+            // While hovered, the title stops short of the hide, star, wiki and note buttons; a
+            // favourite's star and a hidden recipe's "unhide" always show, so its title always does.
+            float hoverW = hasButtons ? Mathf.Max(20f, width - (isRecipe ? 154f : 110f) - x) : 0f;
+            float titleW = Mathf.Min(fullW, starred || hidden ? hoverW : width - x);
             layout.Items.Add(new Item
             {
                 Rect = new Rect(x, y, titleW, LeadSize),
@@ -1228,6 +1295,19 @@ namespace MarginaliaMod
                     Tip = starred ? "A favourite. Click to take it out of favourites" : "Add to favourites",
                     OnClick = () => Favourites.Toggle(t)
                 });
+                if (isRecipe)
+                {
+                    string id = row.Id;
+                    layout.Items.Add(new Item
+                    {
+                        Rect = new Rect(width - 150f, y + 3f, 40f, 18f),
+                        Text = hidden ? "unhide" : "hide",
+                        Style = hidden ? _smallOn : _small,
+                        HoverOnly = !hidden,
+                        Tip = hidden ? "Hidden from the lists. Click to list it again" : "Leave it out of the lists (“show hidden” at the bottom brings it back)",
+                        OnClick = () => HiddenRecipes.Toggle(id)
+                    });
+                }
             }
             y += LeadSize + 2f;
 
@@ -1527,6 +1607,7 @@ namespace MarginaliaMod
             _tabOn.normal.textColor = Color.white;
             _toggle = new GUIStyle(Styles.Button) { fontSize = 12, fixedHeight = 26f };
             _count = new GUIStyle(Styles.Hint) { alignment = TextAnchor.MiddleRight, fixedHeight = 0f, fontSize = 11 };
+            _footer = new GUIStyle(Styles.Hint) { alignment = TextAnchor.MiddleLeft, fixedHeight = 0f, fontSize = 11, wordWrap = false, clipping = TextClipping.Clip };
             _placeholder = new GUIStyle(Styles.Hint) { fixedHeight = 0f, fontSize = 12, wordWrap = false, clipping = TextClipping.Clip };
             _searchField = new GUIStyle(Styles.TextField) { fontSize = 14, padding = new RectOffset(8, 70, 4, 4) };
 

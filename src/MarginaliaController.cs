@@ -263,18 +263,19 @@ namespace MarginaliaMod
             bool modifierHeld = Modifier(keyboard).isPressed;
             var menuButton = MenuButton(mouse);
             var position = mouse.position.ReadValue();
-            // Over the timers panel or the recipe explorer, clicks are for the panel, not the
-            // table beneath. The explorer hides while the wiki window is open.
+            // Over the timers panel, the recipe explorer or the board list, clicks are for the
+            // panel, not the table beneath. The panels hide while the wiki window is open.
             var guiPosition = ToGui(position);
             bool overExplorer = RecipeExplorer.Contains(guiPosition) && !_wiki.IsOpen;
-            bool overPanel = TimersPanel.Contains(guiPosition) || overExplorer;
+            bool overBoardList = BoardList.Contains(guiPosition) && !_wiki.IsOpen;
+            bool overPanel = TimersPanel.Contains(guiPosition) || overExplorer || overBoardList;
             _shield.SetActive(modifierHeld || IsModal || _drag != null || _click != null || overPanel);
 
             bool buttonsDown = mouse.leftButton.isPressed || mouse.rightButton.isPressed || mouse.middleButton.isPressed;
             MenuHandle.Tick(position, HandleOn() && !modifierHeld && !IsModal && _drag == null && _click == null && !overPanel,
                 buttonsDown);
 
-            HoldWheelZoom(overExplorer);
+            HoldWheelZoom(overExplorer || overBoardList);
 
             if (_drag != null)
             {
@@ -288,6 +289,13 @@ namespace MarginaliaMod
                     _wiki.Close();
                 else if (mouse.backButton.wasPressedThisFrame)
                     _wiki.Back();
+                return;
+            }
+
+            // Esc only closes the board list while typing in it; otherwise Esc is the game's.
+            if (BoardList.Typing && !IsModal && keyboard.escapeKey.wasPressedThisFrame)
+            {
+                BoardList.Close();
                 return;
             }
 
@@ -426,7 +434,7 @@ namespace MarginaliaMod
                     Button = button,
                     Offset = new Vector2(label.X, label.Y) - pointer,
                     Alive = () => BoardLabels.Get(label.Id) != null,
-                    MoveTo = p => BoardLabels.Move(label, p),
+                    MoveTo = p => BoardLabels.MoveOnTable(label, p),
                     Done = BoardLabels.Save
                 };
             }
@@ -437,7 +445,7 @@ namespace MarginaliaMod
                     Button = button,
                     Offset = Rulers.Corner(ruler) - pointer,
                     Alive = () => Rulers.Get(ruler.Id) != null,
-                    MoveTo = p => Rulers.Move(ruler, p),
+                    MoveTo = p => Rulers.MoveOnTable(ruler, p),
                     Done = Rulers.Save
                 };
             }
@@ -477,7 +485,7 @@ namespace MarginaliaMod
             var eventSystem = EventSystem.current;
             if (eventSystem == null)
                 return;
-            if (IsModal || RecipeExplorer.Typing)
+            if (IsModal || RecipeExplorer.Typing || BoardList.Typing)
             {
                 if (eventSystem.currentSelectedGameObject != _focusSink)
                     eventSystem.SetSelectedGameObject(_focusSink);
@@ -607,7 +615,7 @@ namespace MarginaliaMod
 
         private void OnGUI()
         {
-            if (!IsModal && !TimersPanel.IsOpen && !RecipeExplorer.IsOpen)
+            if (!IsModal && !TimersPanel.IsOpen && !RecipeExplorer.IsOpen && !BoardList.IsOpen)
                 return;
 
             Styles.Ensure();
@@ -622,17 +630,20 @@ namespace MarginaliaMod
             bool dialogOpen = _editor != null || _sizer != null || _prompt != null;
             if (!_wiki.IsOpen)
             {
-                // IMGUI hands input to whatever is drawn first, and the explorer goes over the
-                // timers, so the timers take no press over the explorer, and neither panel takes
-                // one while the menu is open (a click elsewhere closes it). Only the press is held
-                // back: a release or drag still reaches a control already pressed, so nothing is
-                // left half-pressed, and the panels aren't dimmed.
+                // IMGUI hands input to whatever is drawn first. They're drawn timers, board list,
+                // explorer, each over the last, so a panel takes no press that lands on one drawn
+                // over it, and none takes one while the menu is open (a click elsewhere closes
+                // it). Only the press is held back: a release or drag still reaches a control
+                // already pressed, so nothing is left half-pressed, and the panels aren't dimmed.
                 var e = Event.current;
                 bool press = e.type == EventType.MouseDown;
                 bool overExplorer = RecipeExplorer.Contains(e.mousePosition);
+                bool overBoardList = BoardList.Contains(e.mousePosition);
                 RecipeExplorer.LetGoOfKeyboard(!dialogOpen);
+                BoardList.LetGoOfKeyboard(!dialogOpen);
                 TimersPanel.Draw(screen, !dialogOpen &&
-                                         !(press && (overExplorer || _menuTarget != null) && !TimersPanel.Dragging));
+                                         !(press && (overExplorer || overBoardList || _menuTarget != null) && !TimersPanel.Dragging));
+                BoardList.Draw(screen, !dialogOpen && !(press && (overExplorer || _menuTarget != null)));
                 RecipeExplorer.Draw(screen, !dialogOpen && !(press && _menuTarget != null));
             }
             if (!IsModal)

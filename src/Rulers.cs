@@ -73,6 +73,10 @@ namespace MarginaliaMod
 
         public static Data Get(string id) => _rulers.FirstOrDefault(r => r.Id == id);
 
+        public static IReadOnlyList<Data> All => _rulers;
+
+        private static string _highlighted;
+
         // Called every frame after BoardLabels.Tick, so the rulers' layer goes in just
         // beneath the labels' layer.
         public static void Tick()
@@ -166,7 +170,8 @@ namespace MarginaliaMod
             return null;
         }
 
-        private static Rect Bounds(Data ruler)
+        // Where a ruler is on the board (a line with a little room either side).
+        public static Rect Bounds(Data ruler)
         {
             var cell = CellSize();
             switch (ruler.Shape)
@@ -209,6 +214,42 @@ namespace MarginaliaMod
             Refresh(ruler);
         }
 
+        // Moved as asked, but kept on the table.
+        public static void MoveOnTable(Data ruler, Vector2 corner)
+        {
+            var bounds = Bounds(ruler);
+            var offset = bounds.position - Corner(ruler);
+            bounds.position = corner + offset;
+            Move(ruler, BoardLabels.KeepOnTable(bounds).position - offset);
+        }
+
+        // Picks out one ruler (or none) in a brighter colour.
+        public static void Highlight(string id)
+        {
+            if (id == _highlighted)
+                return;
+            string old = _highlighted;
+            _highlighted = id;
+            foreach (var key in new[] { old, id })
+                if (key != null && Views.TryGetValue(key, out var view) && view != null)
+                {
+                    view.Highlighted = key == _highlighted;
+                    view.SetVerticesDirty();
+                }
+        }
+
+        public static void RemoveMany(IEnumerable<Data> rulers)
+        {
+            foreach (var ruler in rulers.ToList())
+            {
+                _rulers.Remove(ruler);
+                if (Views.TryGetValue(ruler.Id, out var view) && view != null)
+                    UnityEngine.Object.Destroy(view.gameObject);
+                Views.Remove(ruler.Id);
+            }
+            Save();
+        }
+
         public static void Remove(Data ruler)
         {
             _rulers.Remove(ruler);
@@ -236,6 +277,7 @@ namespace MarginaliaMod
                 return;
             view.Ruler = ruler;
             view.Cell = CellSize();
+            view.Highlighted = ruler.Id == _highlighted;
             view.rectTransform.localPosition = new Vector2(ruler.X, ruler.Y);
             view.SetVerticesDirty();
         }
@@ -247,6 +289,10 @@ namespace MarginaliaMod
         private static readonly Color Fill = new Color(0.72f, 0.58f, 0.32f, 0.07f);
         private static readonly Color Edge = new Color(0.72f, 0.58f, 0.32f, 0.75f);
         private static readonly Color Divider = new Color(0.72f, 0.58f, 0.32f, 0.45f);
+        // Picked out from the board list.
+        private static readonly Color BrightFill = new Color(1f, 0.92f, 0.6f, 0.16f);
+        private static readonly Color BrightEdge = new Color(1f, 0.92f, 0.6f, 1f);
+        private static readonly Color BrightDivider = new Color(1f, 0.92f, 0.6f, 0.7f);
 
         private const float EdgeWidth = 3f;
         private const float DividerWidth = 2f;
@@ -257,6 +303,11 @@ namespace MarginaliaMod
 
         public Rulers.Data Ruler;
         public Vector2 Cell;
+        public bool Highlighted;
+
+        private Color FillColor => Highlighted ? BrightFill : Fill;
+        private Color EdgeColor => Highlighted ? BrightEdge : Edge;
+        private Color DividerColor => Highlighted ? BrightDivider : Divider;
 
         protected override void OnPopulateMesh(VertexHelper vh)
         {
@@ -281,18 +332,18 @@ namespace MarginaliaMod
         {
             float width = columns * Cell.x;
             float height = rows * Cell.y;
-            Quad(vh, 0f, -height, width, 0f, Fill);
+            Quad(vh, 0f, -height, width, 0f, FillColor);
 
             for (int c = 1; c < columns; c++)
-                DashedVertical(vh, c * Cell.x, height);
+                DashedVertical(vh, c * Cell.x, height, DividerColor);
             for (int r = 1; r < rows; r++)
-                DashedHorizontal(vh, -r * Cell.y, width);
+                DashedHorizontal(vh, -r * Cell.y, width, DividerColor);
 
             float e = EdgeWidth / 2f;
-            Quad(vh, -e, -e, width + e, e, Edge);
-            Quad(vh, -e, -height - e, width + e, -height + e, Edge);
-            Quad(vh, -e, -height + e, e, -e, Edge);
-            Quad(vh, width - e, -height + e, width + e, -e, Edge);
+            Quad(vh, -e, -e, width + e, e, EdgeColor);
+            Quad(vh, -e, -height - e, width + e, -height + e, EdgeColor);
+            Quad(vh, -e, -height + e, e, -e, EdgeColor);
+            Quad(vh, width - e, -height + e, width + e, -e, EdgeColor);
         }
 
         private void DrawLine(VertexHelper vh, int cells, bool horizontal)
@@ -305,28 +356,28 @@ namespace MarginaliaMod
                 float half = (i == 0 || i == cells ? EndTick : Tick) / 2f;
                 float at = i * step;
                 if (horizontal)
-                    Quad(vh, at - e, -half, at + e, half, Edge);
+                    Quad(vh, at - e, -half, at + e, half, EdgeColor);
                 else
-                    Quad(vh, -half, -at - e, half, -at + e, Edge);
+                    Quad(vh, -half, -at - e, half, -at + e, EdgeColor);
             }
             if (horizontal)
-                Quad(vh, 0f, -e, length, e, Edge);
+                Quad(vh, 0f, -e, length, e, EdgeColor);
             else
-                Quad(vh, -e, -length, e, 0f, Edge);
+                Quad(vh, -e, -length, e, 0f, EdgeColor);
         }
 
-        private static void DashedVertical(VertexHelper vh, float x, float height)
+        private static void DashedVertical(VertexHelper vh, float x, float height, Color color)
         {
             float w = DividerWidth / 2f;
             for (float y = Gap / 2f; y < height; y += Dash + Gap)
-                Quad(vh, x - w, -Mathf.Min(y + Dash, height), x + w, -y, Divider);
+                Quad(vh, x - w, -Mathf.Min(y + Dash, height), x + w, -y, color);
         }
 
-        private static void DashedHorizontal(VertexHelper vh, float y, float width)
+        private static void DashedHorizontal(VertexHelper vh, float y, float width, Color color)
         {
             float w = DividerWidth / 2f;
             for (float x = Gap / 2f; x < width; x += Dash + Gap)
-                Quad(vh, x, y - w, Mathf.Min(x + Dash, width), y + w, Divider);
+                Quad(vh, x, y - w, Mathf.Min(x + Dash, width), y + w, color);
         }
 
         private static void Quad(VertexHelper vh, float x0, float y0, float x1, float y1, Color32 color)
@@ -392,7 +443,7 @@ namespace MarginaliaMod
 
         // The ruler updates live as the sliders move; Cancel puts it back (or removes a
         // new one).
-        private static void OpenSizer(Rulers.Data ruler, bool isNew)
+        internal static void OpenSizer(Rulers.Data ruler, bool isNew)
         {
             int oldColumns = ruler.Columns, oldRows = ruler.Rows;
             var fields = new List<SizerField>();

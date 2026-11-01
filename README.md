@@ -4,6 +4,8 @@
 
 A [Cultist Simulator](https://store.steampowered.com/app/718670/Cultist_Simulator/) DLL mod that adds a hidden context menu to cards, verbs, aspects and the board. You can attach a persistent note to any card, verb or aspect, write labels directly on the table, and draw rulers (card-sized grids and lines) to lay cards out by hand. It can also show the community wiki's article for any card, aspect or verb in an in-game window. And it can pause the game the moment a verb finishes, or just before a card decays.
 
+It also has a recipe explorer: a floating panel listing every recipe from the game's own data, showing what each needs and gives, and what makes and uses each card and aspect, with favourites, hidden recipes and a filter for the recipes you've discovered. And a board list, for finding, fetching, editing and tidying away everything written or drawn on the table, including anything that has ended up off it.
+
 This is an unofficial fan mod. It isn't affiliated with Weather Factory or Fandom. It has only been tried on Linux (Steam), with game version 2026.1.g.2.
 
 ![The board with rulers: grids around the stats and lines under the lore, followers and verbs, plus the board menu](docs/rulers.jpg)
@@ -55,6 +57,7 @@ The recipe explorer:
 - **discovered**, also beside the search box, shows only recipes you've finished in a game; click it (it then reads **all**) for every recipe. It's on to begin with, on every page. A recipe counts once it completes: the game keeps a history of the recipes each character has done, and the mod adds whatever turns up there to its own list, so loading a save brings in what it had already done. The list is kept across saves and legacies.
 - Click a card or aspect to open its page, like JEI in Minecraft: **Made by** (recipes, deck draws, decay and xtriggers), **Used by** (requirements, slots, what consumes it), **Via aspects** (recipes that want one of its aspects), and, for an aspect, **Cards** that have it. Click a recipe's name for its full text and what comes **Before** and **After** it. Click a verb's icon to list its recipes.
 - Star a recipe, card or aspect to make it a favourite: hover its row for the star (it stays, filled, once it's a favourite), or click the star beside a page's name. The **★** button in the title bar opens **Favourites**, with your starred **Recipes** and **Cards**; the **discovered** toggle doesn't hide them there.
+- Hover a recipe's row for **hide** to leave it out of every list. The bar along the bottom says how many recipes on the page are hidden; **show hidden** lists them again, faded, each with **unhide**. Hidden is its own flag, apart from favourites and discovered; favourites still list a hidden recipe.
 - Hover a row for its **wiki** and **note** buttons; a card, aspect or recipe page has them in its title bar too. **wiki** opens the wiki article; **note** writes a note on the recipe, card or aspect, shown under it in the list. **←** (or the mouse back button over the panel) goes back.
 - The mouse wheel scrolls the panel while the pointer is over it. While you type in the search box the game's hotkeys are off; **Esc** then closes the panel, and clicking the board hands the keyboard back. Otherwise Esc and the hotkeys work as usual.
 - On a card or aspect, **Recipes with this…** opens its page; on a verb, **Recipes for this verb…** lists its recipes.
@@ -65,6 +68,14 @@ On the board:
 - **Alt + right-click** empty table, then pick **Write on the board…**. The text appears where you clicked, under the cards, and moves with the table when you pan and zoom.
 - **Alt + right-click** a label to **Edit**, make it **Larger** or **Smaller** (the menu stays open so you can click repeatedly), or **Rub out** (delete) it.
 - **Middle-drag** or **Alt + left-drag** a label to move it.
+
+The board list:
+
+- **Board list…** on the board menu opens a floating panel listing everything written or drawn on the table: board labels, grids and lines. Tabs show them all or one kind at a time, and the search box finds labels by their text. Hover a row and that label or ruler lights up on the table.
+- Each row has **go** (the camera goes to it), **here** (moves it to the middle of the view), **edit** (a label's text, a ruler's size) and **×** (delete). Click a row's text to go to it.
+- Tick rows (or **select all**) to **bring here** or **delete** several at once; delete asks once more before it goes ahead.
+- Something that has ended up off the table, where neither the camera nor the mouse can reach it, says **off the table** and gets its own tab: bring it back with **here**, or delete it. Dragging a label or ruler now stops at the table's edge, so nothing more goes astray.
+- Like the explorer, drag it by its title, resize it by its corner, and it remembers where it was and whether it was open.
 
 Rulers, for laying cards out by hand:
 
@@ -80,7 +91,7 @@ Notes are global: they are keyed by element, verb or recipe id and shared across
 
 Pausing choices are global too, keyed by verb or element id like notes.
 
-Notes are stored in `marginalia.json`, board labels in `marginalia_board.json`, rulers in `marginalia_rulers.json`, pausing choices in `marginalia_pauses.json`, discovered recipes in `marginalia_discovered.json` and favourites in `marginalia_favourites.json`, all in the game's save folder:
+Notes are stored in `marginalia.json`, board labels in `marginalia_board.json`, rulers in `marginalia_rulers.json`, pausing choices in `marginalia_pauses.json`, discovered recipes in `marginalia_discovered.json`, favourites in `marginalia_favourites.json` and hidden recipes in `marginalia_hidden.json`, all in the game's save folder:
 
 | OS | Save folder |
 | --- | --- |
@@ -88,9 +99,9 @@ Notes are stored in `marginalia.json`, board labels in `marginalia_board.json`, 
 | Windows | `%USERPROFILE%\AppData\LocalLow\Weather Factory\Cultist Simulator\` |
 | macOS | `~/Library/Application Support/Weather Factory/Cultist Simulator/` |
 
-On Steam, the mod also keeps a copy of all six files in the game's Steam Cloud space, as one small file (`marginalia_cloud.json`), so they follow you between computers like your saves do. When the game starts, each file is compared with its cloud copy and the newer one wins. If you change notes on two computers without the game syncing in between, the later change is kept. Discovered recipes are the exception: both computers' lists are combined, whichever is newer, since a recipe once discovered stays discovered. Without Steam, or with Steam Cloud turned off, everything stays local.
+On Steam, the mod also keeps a copy of all seven files in the game's Steam Cloud space, as one small file (`marginalia_cloud.json`), so they follow you between computers like your saves do. When the game starts, each file is compared with its cloud copy and the newer one wins. If you change notes on two computers without the game syncing in between, the later change is kept. Discovered recipes are the exception: both computers' lists are combined, whichever is newer, since a recipe once discovered stays discovered. Without Steam, or with Steam Cloud turned off, everything stays local.
 
-Where the timers panel and the recipe explorer sit, their size, and whether they're open are kept in `marginalia_local.json` in the same folder. That file belongs to the computer it's on (another screen wants another layout), so it is never copied to Steam Cloud.
+Where the timers panel, the recipe explorer and the board list sit, their size, and whether they're open are kept in `marginalia_local.json` in the same folder. That file belongs to the computer it's on (another screen wants another layout), so it is never copied to Steam Cloud.
 
 If one of these files can't be read, for example after a hand edit with a typo, the mod leaves it untouched and doesn't save changes to it until it's fixed. The game's log says which file it was.
 
@@ -178,7 +189,9 @@ ContextMenuRegistry.Register(new ContextMenuItem
 | `src/RecipeExplorer.cs` | The recipe explorer: a floating, resizable panel with card, aspect and verb icons, and its menu items |
 | `src/RoostCompat.cs` | Reads the recipe effects and xtriggers that The Roost Machine moves into its own store |
 | `src/Discovery.cs` | Keeps the recipes the player has finished, read from the game's own history of recipes done (`marginalia_discovered.json`) |
+| `src/HiddenRecipes.cs` | The recipes hidden from the recipe explorer's lists (`marginalia_hidden.json`) |
 | `src/Favourites.cs` | The recipes, cards and aspects starred in the recipe explorer (`marginalia_favourites.json`) |
+| `src/BoardList.cs` | The board list: every label, grid and line on the table, to find, fetch, edit or delete |
 | `src/Panels.cs` | Remembers where the floating panels sit (in `marginalia_local.json`, kept off Steam Cloud), and steadies dragging past the window's edge |
 | `mod/synopsis.json` | Mod metadata |
 | `mod/cover.png` | 100×100 mod cover, generated by `tools/make_cover.py` |

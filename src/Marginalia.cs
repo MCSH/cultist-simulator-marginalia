@@ -17,11 +17,12 @@ public class Marginalia
             PauseWatch.Load();
             Discovery.Load();
             Favourites.Load();
+            HiddenRecipes.Load();
             // Panel positions belong to this computer, so they stay out of Steam Cloud.
             PanelLayout.Load();
             SteamCloud.Grows(Discovery.FilePath);
             SteamCloud.Watch(
-                new[] { NoteStore.FilePath, BoardLabels.FilePath, Rulers.FilePath, PauseWatch.FilePath, Discovery.FilePath, Favourites.FilePath },
+                new[] { NoteStore.FilePath, BoardLabels.FilePath, Rulers.FilePath, PauseWatch.FilePath, Discovery.FilePath, Favourites.FilePath, HiddenRecipes.FilePath },
                 () =>
                 {
                     NoteStore.Load();
@@ -30,6 +31,7 @@ public class Marginalia
                     PauseWatch.Load();
                     Discovery.Merge();
                     Favourites.Load();
+                    HiddenRecipes.Load();
                 });
             NoteMenuItems.Register();
             BoardMenuItems.Register();
@@ -40,6 +42,8 @@ public class Marginalia
             TimersPanel.Restore();
             RecipeExplorer.Register();
             RecipeExplorer.Restore();
+            BoardList.Register();
+            BoardList.Restore();
             WikiMenuItems.Register();
 
             var host = new GameObject("Marginalia");

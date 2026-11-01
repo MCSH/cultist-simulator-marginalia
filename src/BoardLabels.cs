@@ -37,6 +37,8 @@ namespace MarginaliaMod
         private static readonly Color Ink = new Color(0.93f, 0.87f, 0.73f, 1f);
         private static readonly Color PanelFill = new Color(0.07f, 0.06f, 0.05f, 0.78f);
         private static readonly Color PanelEdge = new Color(0.72f, 0.58f, 0.32f, 0.85f);
+        // Picked out from the board list: a bright edge.
+        private static readonly Color HighlightEdge = new Color(1f, 0.92f, 0.6f, 1f);
 
         private sealed class View
         {
@@ -47,7 +49,9 @@ namespace MarginaliaMod
         private static List<Data> _labels = new List<Data>();
         private static readonly Dictionary<string, View> Views = new Dictionary<string, View>();
         private static RectTransform _root;
+        private static TabletopSphere _sphere;
         private static float _nextSphereSearch;
+        private static string _highlighted;
 
         public static string FilePath => Path.Combine(Application.persistentDataPath, "marginalia_board.json");
 
@@ -70,6 +74,90 @@ namespace MarginaliaMod
 
         public static Data Get(string id) => _labels.FirstOrDefault(l => l.Id == id);
 
+        public static IReadOnlyList<Data> All => _labels;
+
+        // ---- The table
+
+        // The table's surface, which cards are kept within, in the same units as the labels and
+        // rulers (their layers sit at the sphere's origin). False when no game is on.
+        public static bool TableRect(out Rect table)
+        {
+            table = default;
+            if (_root == null || _sphere == null)
+                return false;
+            table = _sphere.GetRect();
+            return table.width > 0f && table.height > 0f;
+        }
+
+        // Shifted so it lies on the table (or as much of it as fits).
+        public static Rect KeepOnTable(Rect item)
+        {
+            if (!TableRect(out var table))
+                return item;
+            item.x = item.width >= table.width ? table.x : Mathf.Clamp(item.x, table.xMin, table.xMax - item.width);
+            item.y = item.height >= table.height ? table.y : Mathf.Clamp(item.y, table.yMin, table.yMax - item.height);
+            return item;
+        }
+
+        // Somewhere it can never be seen or reached: nothing of it on the table.
+        public static bool OffTable(Rect item) => TableRect(out var table) && !table.Overlaps(item);
+
+        // A point on the board where it is in the world, e.g. for the camera.
+        public static Vector3 ToWorld(Vector2 board) => _root != null ? _root.TransformPoint(board) : Vector3.zero;
+
+        // The middle of the screen, on the board.
+        public static bool ViewCentre(out Vector2 board) =>
+            ScreenToBoard(new Vector2(Screen.width / 2f, Screen.height / 2f), out board);
+
+        // ---- Labels as a whole
+
+        // Where a label is, around its centre; before it's drawn, a guess from its text.
+        public static Rect Bounds(Data label)
+        {
+            var size = Views.TryGetValue(label.Id, out var view) && view != null
+                ? view.Panel.sizeDelta
+                : new Vector2(Mathf.Min(label.Text.Length * 14f, WrapWidth), 44f) * label.Size;
+            return new Rect(new Vector2(label.X, label.Y) - size / 2f, size);
+        }
+
+        // Moved as asked, but kept on the table.
+        public static void MoveOnTable(Data label, Vector2 position)
+        {
+            var bounds = Bounds(label);
+            bounds.center = position;
+            Move(label, KeepOnTable(bounds).center);
+        }
+
+        // Picks out one label (or none) with a bright edge.
+        public static void Highlight(string id)
+        {
+            if (id == _highlighted)
+                return;
+            string old = _highlighted;
+            _highlighted = id;
+            Tint(old);
+            Tint(id);
+        }
+
+        private static void Tint(string id)
+        {
+            if (id == null || !Views.TryGetValue(id, out var view) || view == null)
+                return;
+            view.Panel.GetComponent<Image>().sprite = UiKit.Panel(PanelFill, id == _highlighted ? HighlightEdge : PanelEdge);
+        }
+
+        public static void RemoveMany(IEnumerable<Data> labels)
+        {
+            foreach (var label in labels.ToList())
+            {
+                _labels.Remove(label);
+                if (Views.TryGetValue(label.Id, out var view) && view != null)
+                    UnityEngine.Object.Destroy(view.Panel.gameObject);
+                Views.Remove(label.Id);
+            }
+            Save();
+        }
+
         // Called every frame: (re)attaches to the tabletop whenever a game scene loads.
         public static void Tick()
         {
@@ -82,6 +170,7 @@ namespace MarginaliaMod
                 return;
 
             Views.Clear();
+            _sphere = sphere;
             var sphereRect = sphere.GetRectTransform();
             var rootObject = new GameObject("MarginaliaBoardLabels", typeof(RectTransform));
             rootObject.layer = sphere.gameObject.layer;
@@ -210,6 +299,7 @@ namespace MarginaliaMod
 
             Views[label.Id] = new View { Panel = (RectTransform)panelObject.transform, Text = text };
             Refresh(label);
+            Tint(label.Id);
         }
 
         private static void Refresh(Data label)
