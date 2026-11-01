@@ -30,6 +30,7 @@ public class Marginalia
             PauseMenuItems.Register();
             Finder.Register();
             TimersPanel.Register();
+            RecipeExplorer.Register();
             WikiMenuItems.Register();
 
             var host = new GameObject("Marginalia");

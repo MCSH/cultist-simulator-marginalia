@@ -94,7 +94,7 @@ namespace MarginaliaMod
             };
         }
 
-        private static Texture2D Solid(Color color)
+        internal static Texture2D Solid(Color color)
         {
             var tex = new Texture2D(1, 1) { hideFlags = HideFlags.HideAndDontSave };
             tex.SetPixel(0, 0, color);
@@ -103,7 +103,7 @@ namespace MarginaliaMod
         }
 
         // 3x3 texture with a 1px border, for use with GUIStyle.border = 1.
-        private static Texture2D Bordered(Color fill, Color edge)
+        internal static Texture2D Bordered(Color fill, Color edge)
         {
             var tex = new Texture2D(3, 3) { hideFlags = HideFlags.HideAndDontSave, filterMode = FilterMode.Point };
             for (int x = 0; x < 3; x++)

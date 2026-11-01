@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using SecretHistories.Infrastructure;
 using SecretHistories.Services;
 using SecretHistories.UI;
 using UnityEngine;
@@ -122,7 +123,8 @@ namespace MarginaliaMod
 
         private WikiWindow _wiki;
 
-        private bool IsModal => _menuTarget != null || _editor != null || _sizer != null || _prompt != null || _wiki.IsOpen;
+        private bool IsModal => _menuTarget != null || _editor != null || _sizer != null || _prompt != null || _wiki.IsOpen ||
+                               RecipeExplorer.IsOpen;
 
         // IMGUI is laid out for 1080p and scaled to the screen.
         private static float GuiScale => Mathf.Clamp(Screen.height / 1080f, 0.75f, 3f);
@@ -280,6 +282,20 @@ namespace MarginaliaMod
             }
 
             bool canOpen = _editor == null && _sizer == null && _prompt == null;
+            if (RecipeExplorer.IsOpen)
+            {
+                // The wiki window turns zoom back on when it closes over the explorer.
+                Watchman.Get<LocalNexus>()?.DisablePlayerZoom();
+                if (canOpen && _menuTarget == null)
+                {
+                    if (keyboard.escapeKey.wasPressedThisFrame)
+                        RecipeExplorer.Close();
+                    else if (mouse.backButton.wasPressedThisFrame)
+                        RecipeExplorer.Back();
+                }
+                return;
+            }
+
             if (_click != null)
             {
                 ContinueClick(position);
@@ -435,8 +451,13 @@ namespace MarginaliaMod
 
         public void OpenWiki(MenuTarget target)
         {
+            OpenWiki(Wiki.CleanName(target.Label));
+        }
+
+        public void OpenWiki(string name)
+        {
             CloseMenu();
-            _wiki.OpenFor(Wiki.CleanName(target.Label));
+            _wiki.OpenFor(name);
         }
 
         public void OpenMenu(MenuTarget target, Vector2 screenPosition)
@@ -556,10 +577,14 @@ namespace MarginaliaMod
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
             var screen = new Rect(0f, 0f, Screen.width / scale, Screen.height / scale);
 
-            // Drawn first, so the menu and dialogs go over it; only usable when nothing
-            // else wants the keyboard. The wiki window is uGUI, which IMGUI would cover.
-            if (!_wiki.IsOpen)
-                TimersPanel.Draw(screen, _editor == null && _sizer == null && _prompt == null);
+            // Drawn first, so the menu and dialogs go over them; only usable when nothing
+            // else wants the keyboard. The wiki window is uGUI, which IMGUI would cover,
+            // so the explorer waits behind it and comes back when it closes.
+            bool dialogOpen = _editor != null || _sizer != null || _prompt != null;
+            if (!_wiki.IsOpen && RecipeExplorer.IsOpen)
+                RecipeExplorer.Draw(screen, !dialogOpen && _menuTarget == null);
+            else if (!_wiki.IsOpen)
+                TimersPanel.Draw(screen, !dialogOpen);
             if (!IsModal)
                 return;
 

@@ -8,7 +8,8 @@ namespace MarginaliaMod
         Verb,
         Board,
         BoardLabel,
-        Ruler
+        Ruler,
+        Recipe
     }
 
     // The thing a context menu was opened on. Cards and aspects are both Elements in
@@ -28,6 +29,10 @@ namespace MarginaliaMod
         public static MenuTarget ForVerb(string id, string label) =>
             new MenuTarget { Kind = TargetKind.Verb, Id = id, Label = string.IsNullOrEmpty(label) ? id : label };
 
+        // Only for notes: recipes have no menu of their own, but the recipe explorer can note them.
+        public static MenuTarget ForRecipe(string id, string label) =>
+            new MenuTarget { Kind = TargetKind.Recipe, Id = id, Label = string.IsNullOrEmpty(label) ? id : label };
+
         public static MenuTarget ForBoard(Vector2 position) =>
             new MenuTarget { Kind = TargetKind.Board, Id = "board", Label = "The board", BoardPosition = position };
 
@@ -37,9 +42,9 @@ namespace MarginaliaMod
         public static MenuTarget ForRuler(Rulers.Data ruler, Vector2 position) =>
             new MenuTarget { Kind = TargetKind.Ruler, Id = ruler.Id, Label = Rulers.Describe(ruler), BoardPosition = position };
 
-        public bool CanHaveNote => Kind == TargetKind.Element || Kind == TargetKind.Verb;
+        public bool CanHaveNote => Kind == TargetKind.Element || Kind == TargetKind.Verb || Kind == TargetKind.Recipe;
 
-        public string NoteKey => (Kind == TargetKind.Verb ? "verb:" : "element:") + Id;
+        public string NoteKey => (Kind == TargetKind.Verb ? "verb:" : Kind == TargetKind.Recipe ? "recipe:" : "element:") + Id;
 
         public string Subtitle
         {
@@ -49,6 +54,7 @@ namespace MarginaliaMod
                 {
                     case TargetKind.Element: return "Element · " + Id;
                     case TargetKind.Verb: return "Verb · " + Id;
+                    case TargetKind.Recipe: return "Recipe · " + Id;
                     case TargetKind.BoardLabel: return "Board label · Alt + drag to move";
                     case TargetKind.Ruler: return "Ruler · Alt + drag to move";
                     default: return "Written on the table itself";
