@@ -44,14 +44,19 @@ Finding things and keeping an eye on timers:
 | ![The timers panel: running verbs and decaying cards, soonest first, with the ones that will pause marked](docs/timers.png) | ![The board menu with Find on the table, Hide timers and Step time 0.1 s forward](docs/board-menu.png) |
 
 - **Find on the table…** on the board menu opens a search box. As you type, a gold ring goes around every card and verb whose name contains what you typed. A card inside a closed verb rings the verb. **Enter** closes the box and leaves the rings for a few seconds; **Esc** clears them.
-- **Show timers** on the board menu opens a small panel listing every running verb and decaying card, soonest first, with the time left. Rows that will pause the game say *pauses*. Click a row to ring that card or verb. Drag the panel by its title; **Close** or **Hide timers** puts it away. It shows the 14 soonest.
+- **Show timers** on the board menu opens a small panel listing every running verb and decaying card, soonest first, with the time left. Rows that will pause the game say *pauses*. Click a row to ring that card or verb. Drag the panel by its title; **Close** or **Hide timers** puts it away. It shows the 14 soonest. It remembers where it was and whether it was open, even after restarting the game.
 
 The recipe explorer:
 
-- **Recipe explorer…** on the board menu opens a book of every recipe in the game, read from the game's own data (so DLCs and content mods are included, not the wiki). Each recipe shows its verb, what it needs and what it gives, e.g. *Work · Reason's Glory [Minor]*: `Ritual 1+` `no Knock` `Lantern 5+` `Edge 1+` → `Passion → Reason`.
-- Type in the search box to narrow it down. Every word must match a name, card or aspect, so `lantern edge` finds Reason's Glory. **Showing startable** hides recipes that only follow another one; click it to show all.
-- Click a card or aspect to open its page, like JEI in Minecraft: **Made by** (recipes, deck draws, decay and xtriggers), **Used by** (requirements, slots, what consumes it), **Through its aspects** (recipes that want one of its aspects), and, for an aspect, **Cards with it**. Click a recipe's name for its full text and what comes before and after it. Click a verb to list its recipes.
-- **Wiki** opens the wiki article; **Note** writes a note on the recipe, card or aspect, shown under it in the list. **Back** (or the mouse back button) returns; **Esc** closes.
+- **Recipe explorer…** on the board menu opens a floating panel listing every recipe in the game, read from the game's own data (so DLCs and content mods are included, not the wiki). Drag it by its title bar and resize it from its bottom-right corner; the board stays in play around it. **Hide recipe explorer**, or **×**, puts it away. It remembers its position, its size and whether it was open, even after restarting the game, and it opens again on the page you left it on during a session.
+- Each row starts with its verb's icon and the recipe's name, then the cards and aspects it needs → what it gives, as their icons with a small badge for the amount: `5+` at least five, `0` none allowed, `+1` made, `−1` used up. Hover an icon for its name, e.g. *Lantern 5+*. Something with no icon (a deck, a recipe) shows as text.
+- A recipe's needs are totals over every card in the verb, so where it can, the explorer shows them as the cards you put in: the main card (say, a skill), then each slot that card opens, framed, with what goes in it. *Exercise the Mind: A Brighter Illumination* reads as Profound Scholarship, then one frame holding Lore and Forge (a Forge lore in *Something More*), then **4×** Erudition (one in each *A Lesson Learnt*). Hover a frame for its slot; a recipe's own page names them. What the shown cards already carry is taken off, so *A Deeper Grace* asks for a Lore with just **Heart 1+ more**, since its four lessons give Heart 8. Needs that could come from any card stay as plain totals.
+- Type in the search box to narrow it down. Every word must match a name, card or aspect, so `lantern edge` finds Reason's Glory. **startable**, beside the search box, hides recipes that only follow another one; click it (it then reads **all**) to show every recipe.
+- **discovered**, also beside the search box, shows only recipes you've finished in a game; click it (it then reads **all**) for every recipe. It's on to begin with, on every page. A recipe counts once it completes: the game keeps a history of the recipes each character has done, and the mod adds whatever turns up there to its own list, so loading a save brings in what it had already done. The list is kept across saves and legacies.
+- Click a card or aspect to open its page, like JEI in Minecraft: **Made by** (recipes, deck draws, decay and xtriggers), **Used by** (requirements, slots, what consumes it), **Via aspects** (recipes that want one of its aspects), and, for an aspect, **Cards** that have it. Click a recipe's name for its full text and what comes **Before** and **After** it. Click a verb's icon to list its recipes.
+- Star a recipe, card or aspect to make it a favourite: hover its row for the star (it stays, filled, once it's a favourite), or click the star beside a page's name. The **★** button in the title bar opens **Favourites**, with your starred **Recipes** and **Cards**; the **discovered** toggle doesn't hide them there.
+- Hover a row for its **wiki** and **note** buttons; a card, aspect or recipe page has them in its title bar too. **wiki** opens the wiki article; **note** writes a note on the recipe, card or aspect, shown under it in the list. **←** (or the mouse back button over the panel) goes back.
+- The mouse wheel scrolls the panel while the pointer is over it. While you type in the search box the game's hotkeys are off; **Esc** then closes the panel, and clicking the board hands the keyboard back. Otherwise Esc and the hotkeys work as usual.
 - On a card or aspect, **Recipes with this…** opens its page; on a verb, **Recipes for this verb…** lists its recipes.
 - With [The Roost Machine](https://steamcommunity.com/sharedfiles/filedetails/?id=2625527332) loaded, effects and xtriggers are read from where Roost keeps them.
 
@@ -75,7 +80,7 @@ Notes are global: they are keyed by element, verb or recipe id and shared across
 
 Pausing choices are global too, keyed by verb or element id like notes.
 
-Notes are stored in `marginalia.json`, board labels in `marginalia_board.json`, rulers in `marginalia_rulers.json` and pausing choices in `marginalia_pauses.json`, all in the game's save folder:
+Notes are stored in `marginalia.json`, board labels in `marginalia_board.json`, rulers in `marginalia_rulers.json`, pausing choices in `marginalia_pauses.json`, discovered recipes in `marginalia_discovered.json` and favourites in `marginalia_favourites.json`, all in the game's save folder:
 
 | OS | Save folder |
 | --- | --- |
@@ -83,7 +88,9 @@ Notes are stored in `marginalia.json`, board labels in `marginalia_board.json`, 
 | Windows | `%USERPROFILE%\AppData\LocalLow\Weather Factory\Cultist Simulator\` |
 | macOS | `~/Library/Application Support/Weather Factory/Cultist Simulator/` |
 
-On Steam, the mod also keeps a copy of all four files in the game's Steam Cloud space, as one small file (`marginalia_cloud.json`), so they follow you between computers like your saves do. When the game starts, each file is compared with its cloud copy and the newer one wins. If you change notes on two computers without the game syncing in between, the later change is kept. Without Steam, or with Steam Cloud turned off, everything stays local.
+On Steam, the mod also keeps a copy of all six files in the game's Steam Cloud space, as one small file (`marginalia_cloud.json`), so they follow you between computers like your saves do. When the game starts, each file is compared with its cloud copy and the newer one wins. If you change notes on two computers without the game syncing in between, the later change is kept. Discovered recipes are the exception: both computers' lists are combined, whichever is newer, since a recipe once discovered stays discovered. Without Steam, or with Steam Cloud turned off, everything stays local.
+
+Where the timers panel and the recipe explorer sit, their size, and whether they're open are kept in `marginalia_local.json` in the same folder. That file belongs to the computer it's on (another screen wants another layout), so it is never copied to Steam Cloud.
 
 If one of these files can't be read, for example after a hand edit with a typo, the mod leaves it untouched and doesn't save changes to it until it's fixed. The game's log says which file it was.
 
@@ -168,8 +175,11 @@ ContextMenuRegistry.Register(new ContextMenuItem
 | `src/UiKit.cs` | Shared font, nine-sliced panels and layout helpers for the uGUI parts |
 | `src/Styles.cs` | IMGUI look |
 | `src/RecipeIndex.cs` | Reads every recipe, decay and xtrigger from the compendium, and indexes what makes and uses each card and aspect |
-| `src/RecipeExplorer.cs` | The recipe explorer window and its menu items |
+| `src/RecipeExplorer.cs` | The recipe explorer: a floating, resizable panel with card, aspect and verb icons, and its menu items |
 | `src/RoostCompat.cs` | Reads the recipe effects and xtriggers that The Roost Machine moves into its own store |
+| `src/Discovery.cs` | Keeps the recipes the player has finished, read from the game's own history of recipes done (`marginalia_discovered.json`) |
+| `src/Favourites.cs` | The recipes, cards and aspects starred in the recipe explorer (`marginalia_favourites.json`) |
+| `src/Panels.cs` | Remembers where the floating panels sit (in `marginalia_local.json`, kept off Steam Cloud), and steadies dragging past the window's edge |
 | `mod/synopsis.json` | Mod metadata |
 | `mod/cover.png` | 100×100 mod cover, generated by `tools/make_cover.py` |
 | `install.sh` | Builds the mod and installs it locally (Linux paths by default) |

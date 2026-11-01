@@ -24,7 +24,8 @@ namespace MarginaliaMod
 
         public sealed class Chip
         {
-            public string Text;
+            public string Text;        // the whole thing, e.g. "Lantern 5+"; a tooltip when shown as an icon
+            public string Amount;      // the badge on its icon, e.g. "5+", "+1", "0"
             public ChipKind Kind;
             public string ElementId;   // clicking goes to this element, if set
             public string RecipeId;    // or to this recipe
@@ -44,6 +45,35 @@ namespace MarginaliaMod
             public readonly List<Chip> Gives = new List<Chip>();
             public readonly List<Chip> Then = new List<Chip>();
             public string Search;
+
+            // How the needs are met in the verb, when that can be worked out: the main card,
+            // then each slot it opens with what goes in it. Loose is what's left over (things
+            // that may come from any card, and what's needed on the table). Null otherwise.
+            public List<NeedGroup> Groups;
+            public List<Chip> Loose;
+        }
+
+        // One card in the verb: the main card (no label), or a slot it opens. A repeated slot
+        // is one group with a count, e.g. four "A Lesson Learnt" slots each taking an Erudition.
+        public sealed class NeedGroup
+        {
+            public string Label;
+            public int Count = 1;
+            public readonly List<Chip> Chips = new List<Chip>();
+
+            // Said when its frame is hovered.
+            public string Tip
+            {
+                get
+                {
+                    var what = string.Join(", ", Chips.Select(c => c.Text));
+                    if (Label == null)
+                        return "The main card: " + what;
+                    return Count > 1
+                        ? Count + " cards, one in each “" + Label + "” slot: " + what
+                        : "In the “" + Label + "” slot, one card with " + what;
+                }
+            }
         }
 
         // A row as listed on an element's or recipe's page, with why it's there.
@@ -67,6 +97,13 @@ namespace MarginaliaMod
         private readonly Dictionary<string, Element> _elements = new Dictionary<string, Element>();
         private readonly Dictionary<string, DeckSpec> _decks = new Dictionary<string, DeckSpec>();
         private readonly Dictionary<string, string> _verbLabels = new Dictionary<string, string>();
+        private readonly Dictionary<string, string> _verbIcons = new Dictionary<string, string>();
+
+        // Aspects the recipe being built mutates; GroupNeeds keeps those in view.
+        private readonly HashSet<string> _mutatedHere = new HashSet<string>();
+
+        // Aspect id -> every aspect found on a card alongside it.
+        private readonly Dictionary<string, HashSet<string>> _alongside = new Dictionary<string, HashSet<string>>();
 
         // An xtrigger: what a card turns into, spawns or gains when a catalyst is present.
         private sealed class Morph
@@ -116,7 +153,10 @@ namespace MarginaliaMod
             foreach (var deck in compendium.GetEntitiesAsList<DeckSpec>())
                 _decks[deck.Id] = deck;
             foreach (var verb in compendium.GetEntitiesAsList<Verb>())
+            {
                 _verbLabels[verb.Id] = Wiki.CleanName(verb.Label);
+                _verbIcons[verb.Id] = string.IsNullOrEmpty(verb.Icon) ? verb.Id : verb.Icon;
+            }
             foreach (var element in _elements.Values)
                 IndexReactions(element);
 
@@ -157,6 +197,26 @@ namespace MarginaliaMod
 
         public bool IsElement(string id) => id != null && _elements.ContainsKey(id);
 
+        private readonly Dictionary<string, Row> _aspectRows = new Dictionary<string, Row>();
+
+        // A row for a card, or for an aspect (which has no card row of its own), e.g. to list it
+        // among favourites. Null if there's no such element.
+        public Row ElementRow(string id)
+        {
+            if (id == null)
+                return null;
+            if (Cards.TryGetValue(id, out var card))
+                return card;
+            if (_aspectRows.TryGetValue(id, out var aspect))
+                return aspect;
+            if (!IsElement(id))
+                return null;
+            aspect = new Row { Kind = RowKind.Card, Id = id, Title = ElementLabel(id), Tag = "aspect" };
+            aspect.Search = SearchText(aspect);
+            _aspectRows[id] = aspect;
+            return aspect;
+        }
+
         public string ElementLabel(string id)
         {
             var label = Element(id) != null ? Wiki.CleanName(Element(id).Label) : null;
@@ -169,6 +229,10 @@ namespace MarginaliaMod
                 return "any verb";
             return _verbLabels.TryGetValue(id, out var label) && !string.IsNullOrEmpty(label) && label != "." ? label : id;
         }
+
+        // The image name of a verb's icon, or null for a wildcard or unknown verb.
+        public string VerbIcon(string id) =>
+            id != null && _verbIcons.TryGetValue(id, out var icon) ? icon : null;
 
         public static string RecipeLabel(Recipe recipe)
         {
@@ -193,6 +257,7 @@ namespace MarginaliaMod
 
         private Row BuildRecipe(Recipe recipe)
         {
+            _mutatedHere.Clear();
             var row = new Row
             {
                 Kind = RowKind.Recipe,
@@ -205,6 +270,7 @@ namespace MarginaliaMod
             };
 
             AddNeeds(row, recipe.Requirements, "");
+            var inVerb = row.Needs.ToList();
             AddNeeds(row, recipe.TableReqs, " on the table");
             AddNeeds(row, recipe.ExtantReqs, " anywhere");
 
@@ -223,7 +289,7 @@ namespace MarginaliaMod
             if (recipe.Purge != null)
                 foreach (var purge in recipe.Purge)
                 {
-                    row.Gives.Add(new Chip { Text = "purge " + purge.Value + " " + ElementLabel(purge.Key), Kind = ChipKind.Take, ElementId = purge.Key });
+                    row.Gives.Add(new Chip { Text = "purge " + purge.Value + " " + ElementLabel(purge.Key), Amount = "×" + purge.Value, Kind = ChipKind.Take, ElementId = purge.Key });
                     Add(UsedBy, purge.Key, row, "purges " + purge.Value);
                 }
 
@@ -231,21 +297,262 @@ namespace MarginaliaMod
                 foreach (var draw in recipe.DeckEffects)
                     AddDraw(row, draw.Key, draw.Value);
 
-            // The recipe's own aspects can set off xtriggers in the cards it holds.
+            // The recipe's own aspects set off xtriggers in the cards it holds, and only those:
+            // "careeradvancement" turns the skill in the verb into the next one, not every job
+            // and skill in the game. So only the cards it asks for by name, in its requirements
+            // or its own slots (the Passion given up to Reason's Glory, say).
             if (recipe.Aspects != null)
+            {
+                var held = new HashSet<string>((recipe.Requirements ?? new Dictionary<string, string>())
+                    .Where(r => !TryInt(r.Value, out int n) || n > 0)
+                    .Select(r => r.Key)
+                    .Concat((recipe.Slots ?? new List<SphereSpec>()).Where(s => s != null).SelectMany(SlotKeys))
+                    .Where(IsCard));
                 foreach (var aspect in recipe.Aspects)
                 {
                     if (aspect.Value <= 0 || !_reactions.TryGetValue(aspect.Key, out var reactions))
                         continue;
                     foreach (var (card, morph) in reactions)
-                        AddReaction(row, card, morph, ElementLabel(card.Id) + " → ", "", true);
+                        if (held.Contains(card.Id))
+                            AddReaction(row, card, morph, ElementLabel(card.Id) + " → ", "", true);
                 }
+            }
 
             if (!string.IsNullOrEmpty(recipe.Ending))
                 row.Gives.Add(new Chip { Text = "ends the game", Kind = ChipKind.Plain });
 
+            GroupNeeds(row, recipe, inVerb);
             row.Search = SearchText(row);
             return row;
+        }
+
+        // A slot the main card opens (or a run of identical ones), while needs are sorted into it.
+        private sealed class SlotGroup
+        {
+            public NeedGroup Group;
+            public HashSet<string> Keys;
+            public int Slots;
+            public string Card;        // a card asked for by name, put here
+            public bool Filled;        // holds what the slot asks for
+        }
+
+        // A recipe's requirements are totals over every card in the verb, so a flat list makes
+        // one card with two aspects look like two cards. When the recipe names a card that opens
+        // slots in its verb (a skill, say), that's the main card, and the rest is sorted into
+        // its slots, in this order:
+        //  1. cards asked for by name go in a slot that takes them (copies of the main card too);
+        //  2. what those cards already carry is taken off the totals, and what they cover is
+        //     dropped (unless this recipe changes it, like a flute's last use);
+        //  3. what a slot asks for goes in it, as many cards as slots, e.g. four Erudition;
+        //  4. another aspect goes with a single card when that slot is the only place a card
+        //     carrying it could go, e.g. Forge with the Lore in "Something More".
+        // Whatever's left stays a plain total, less what the shown cards already give.
+        private void GroupNeeds(Row row, Recipe recipe, List<Chip> inVerb)
+        {
+            var asked = new Dictionary<Chip, int>();
+            foreach (var chip in inVerb)
+                if (chip.Kind == ChipKind.Need && recipe.Requirements.TryGetValue(chip.ElementId, out var value) &&
+                    TryInt(value, out int n) && n > 0)
+                    asked[chip] = n;
+
+            // The main card: the named card whose slots take the most of the other named cards,
+            // then the one opening the most slots.
+            Chip mainChip = null;
+            List<SphereSpec> mainSlots = null;
+            int bestFits = -1;
+            foreach (var chip in asked.Keys)
+            {
+                var element = Element(chip.ElementId);
+                if (element == null || element.IsAspect || element.Slots == null)
+                    continue;
+                var open = element.Slots
+                    .Where(s => s != null && (string.IsNullOrEmpty(s.ActionId) || NoonExtensions.WildcardMatchId(recipe.ActionId ?? "", s.ActionId)))
+                    .ToList();
+                if (open.Count == 0)
+                    continue;
+                int fits = asked.Keys.Count(other => other != chip && IsCard(other.ElementId) &&
+                                                     open.Any(s => SlotKeys(s).Any(k => Has(other.ElementId, k))));
+                if (fits > bestFits || fits == bestFits && open.Count > mainSlots.Count)
+                {
+                    mainChip = chip;
+                    mainSlots = open;
+                    bestFits = fits;
+                }
+            }
+            if (mainChip == null)
+                return;
+
+            var slots = new List<SlotGroup>();
+            foreach (var spec in mainSlots)
+            {
+                var keys = SlotKeys(spec);
+                string label = Clean(spec.Label);
+                if (string.IsNullOrEmpty(label))
+                    label = spec.Id;
+                var same = slots.FirstOrDefault(g => g.Group.Label == label && g.Keys.SetEquals(keys));
+                if (same != null)
+                    same.Slots++;
+                else
+                    slots.Add(new SlotGroup { Group = new NeedGroup { Label = label }, Keys = keys, Slots = 1 });
+            }
+
+            var main = new NeedGroup();
+            var placed = new HashSet<Chip> { mainChip };
+            var loose = new List<Chip>();
+            string mainId = mainChip.ElementId;
+
+            // A card that counts as one of itself: one goes in each slot it takes, as many as
+            // asked; a run of slots it doesn't fill stays open for other cards.
+            int PutCard(string card, int count)
+            {
+                foreach (var slot in slots.ToList())
+                {
+                    if (count <= 0)
+                        break;
+                    if (slot.Card != null || slot.Filled || !slot.Keys.Any(k => Has(card, k)))
+                        continue;
+                    int used = Math.Min(count, slot.Slots);
+                    Split(slots, slot, used);
+                    slot.Card = card;
+                    slot.Group.Count = used;
+                    slot.Group.Chips.Add(new Chip { Text = ElementLabel(card), Kind = ChipKind.Need, ElementId = card });
+                    count -= used;
+                }
+                return count;
+            }
+
+            // What's still asked for once its id has been seen n times.
+            Chip More(Chip chip, int n) => new Chip
+            {
+                Text = ElementLabel(chip.ElementId) + " " + n + "+ more",
+                Amount = n + "+",
+                Kind = chip.Kind,
+                ElementId = chip.ElementId
+            };
+
+            // 1. The main card, and any other copies of it in its own slots; then other named cards.
+            main.Chips.Add(asked[mainChip] > 1 ? new Chip { Text = ElementLabel(mainId), Kind = ChipKind.Need, ElementId = mainId } : mainChip);
+            int mainLeft = PutCard(mainId, asked[mainChip] - 1);
+            if (mainLeft > 0)
+                loose.Add(More(mainChip, mainLeft));
+            foreach (var chip in asked.Keys.ToList())
+            {
+                if (placed.Contains(chip) || !IsCard(chip.ElementId))
+                    continue;
+                int left = PutCard(chip.ElementId, asked[chip]);
+                if (left == asked[chip])
+                    continue;
+                placed.Add(chip);
+                if (left > 0)
+                    loose.Add(More(chip, left));
+            }
+
+            // 2. Take off what the cards now shown already carry.
+            int Supplied(string id) =>
+                Amount(mainId, id) + slots.Where(g => g.Card != null).Sum(g => Amount(g.Card, id) * g.Group.Count);
+            var need = new Dictionary<Chip, int>();
+            var shown = new Dictionary<Chip, Chip>();
+            foreach (var pair in asked)
+            {
+                if (placed.Contains(pair.Key))
+                    continue;
+                string id = pair.Key.ElementId;
+                int have = Supplied(id);
+                if (have >= pair.Value)
+                {
+                    placed.Add(pair.Key);
+                    // Changed by this recipe (a last use, say): worth showing on its card.
+                    if (_mutatedHere.Contains(id))
+                    {
+                        var carrier = slots.FirstOrDefault(g => g.Card != null && Amount(g.Card, id) > 0)?.Group ?? main;
+                        carrier.Chips.Add(pair.Key);
+                    }
+                    continue;
+                }
+                need[pair.Key] = pair.Value - have;
+                shown[pair.Key] = have > 0 ? More(pair.Key, pair.Value - have) : pair.Key;
+            }
+
+            // 3. What a slot asks for goes in it: as many cards as slots, one each.
+            foreach (var chip in need.Keys.ToList())
+            {
+                var slot = slots.FirstOrDefault(g => g.Card == null && !g.Filled && g.Keys.Contains(chip.ElementId));
+                if (slot == null)
+                    continue;
+                int n = need[chip];
+                slot.Filled = true;
+                slot.Group.Count = Math.Max(1, Math.Min(n, slot.Slots));
+                var show = shown[chip];
+                if (slot.Group.Count > 1 && n == slot.Group.Count)
+                    show = new Chip { Text = ElementLabel(chip.ElementId), Kind = chip.Kind, ElementId = chip.ElementId };
+                slot.Group.Chips.Add(show);
+                placed.Add(chip);
+                need.Remove(chip);
+            }
+
+            // 4. Another aspect goes with a single card, when only one slot's cards can carry it.
+            //    Not with a run of cards: a total can't be pinned on each of them.
+            foreach (var chip in need.Keys.ToList())
+            {
+                var fits = slots.Where(g => g.Filled && g.Keys.Any(k => Alongside(k).Contains(chip.ElementId))).ToList();
+                if (fits.Count != 1 || fits[0].Group.Count > 1)
+                    continue;
+                fits[0].Group.Chips.Add(shown[chip]);
+                placed.Add(chip);
+                need.Remove(chip);
+            }
+
+            row.Groups = new List<NeedGroup> { main }.Concat(slots.Select(g => g.Group).Where(g => g.Chips.Count > 0)).ToList();
+            // Plain totals: everything not sorted into a card, less what the shown cards give.
+            row.Loose = row.Needs.Where(c => !placed.Contains(c)).Select(c => shown.TryGetValue(c, out var less) ? less : c)
+                .Concat(loose).ToList();
+        }
+
+        private static HashSet<string> SlotKeys(SphereSpec slot) =>
+            new HashSet<string>((slot.Required?.Keys ?? Enumerable.Empty<string>())
+                .Concat(slot.Essential?.Keys ?? Enumerable.Empty<string>()));
+
+        // Takes the first `used` of a run of identical slots; the rest become their own group.
+        private static void Split(List<SlotGroup> slots, SlotGroup slot, int used)
+        {
+            if (slot.Slots <= used)
+                return;
+            var rest = new SlotGroup { Group = new NeedGroup { Label = slot.Group.Label }, Keys = slot.Keys, Slots = slot.Slots - used };
+            slots.Insert(slots.IndexOf(slot) + 1, rest);
+            slot.Slots = used;
+        }
+
+        private bool IsCard(string id) => Element(id) is Element element && !element.IsAspect;
+
+        // How much of an aspect a card has; a card counts as one of itself.
+        private int Amount(string card, string aspect)
+        {
+            if (card == aspect)
+                return 1;
+            var element = Element(card);
+            return element?.Aspects != null && element.Aspects.TryGetValue(aspect, out int n) ? n : 0;
+        }
+
+        private bool Has(string card, string aspect) => Amount(card, aspect) > 0;
+
+        // The aspects found on any card that has the given aspect (or is that card).
+        private HashSet<string> Alongside(string aspect)
+        {
+            if (_alongside.TryGetValue(aspect, out var found))
+                return found;
+            found = new HashSet<string>();
+            foreach (var element in _elements.Values)
+            {
+                if (element.Id != aspect && (element.Aspects == null || !element.Aspects.TryGetValue(aspect, out int n) || n <= 0))
+                    continue;
+                found.Add(element.Id);
+                if (element.Aspects != null)
+                    foreach (var other in element.Aspects)
+                        if (other.Value > 0)
+                            found.Add(other.Key);
+            }
+            _alongside[aspect] = found;
+            return found;
         }
 
         private void AddNeeds(Row row, Dictionary<string, string> needs, string where)
@@ -257,17 +564,17 @@ namespace MarginaliaMod
                 string label = ElementLabel(need.Key);
                 if (!TryInt(need.Value, out int n))
                 {
-                    row.Needs.Add(new Chip { Text = label + " (" + need.Value + ")" + where, Kind = ChipKind.Need, ElementId = need.Key });
+                    row.Needs.Add(new Chip { Text = label + " (" + need.Value + ")" + where, Amount = "?", Kind = ChipKind.Need, ElementId = need.Key });
                     Add(UsedBy, need.Key, row, "needs some" + where);
                 }
                 else if (n > 0)
                 {
-                    row.Needs.Add(new Chip { Text = label + " " + n + "+" + where, Kind = ChipKind.Need, ElementId = need.Key });
+                    row.Needs.Add(new Chip { Text = label + " " + n + "+" + where, Amount = n + "+", Kind = ChipKind.Need, ElementId = need.Key });
                     Add(UsedBy, need.Key, row, "needs " + n + "+" + where);
                 }
                 else if (n < 0)
                 {
-                    row.Needs.Add(new Chip { Text = (n == -1 ? "no " + label : label + " < " + -n) + where, Kind = ChipKind.Lack, ElementId = need.Key });
+                    row.Needs.Add(new Chip { Text = (n == -1 ? "no " + label : label + " < " + -n) + where, Amount = n == -1 ? "0" : "<" + -n, Kind = ChipKind.Lack, ElementId = need.Key });
                 }
             }
         }
@@ -283,7 +590,8 @@ namespace MarginaliaMod
             string what = wants.Count == 0 ? "anything" : string.Join(" or ", wants.Select(ElementLabel));
             row.Needs.Add(new Chip
             {
-                Text = "slot: " + what + (slot.Consumes ? " (consumed)" : ""),
+                Text = "slot “" + slotLabel + "”: " + what + (slot.Consumes ? " (consumed)" : ""),
+                Amount = "slot",
                 Kind = ChipKind.Slot,
                 ElementId = wants.Count == 1 ? wants[0] : null
             });
@@ -299,12 +607,12 @@ namespace MarginaliaMod
             string label = ElementLabel(id);
             if (numeric && n < 0)
             {
-                row.Gives.Add(new Chip { Text = "−" + -n + " " + label, Kind = ChipKind.Take, ElementId = id });
+                row.Gives.Add(new Chip { Text = "−" + -n + " " + label, Amount = "−" + -n, Kind = ChipKind.Take, ElementId = id });
                 Add(UsedBy, id, row, "consumes " + -n);
             }
             else if (!numeric || n > 0)
             {
-                row.Gives.Add(new Chip { Text = (numeric ? "+" + n : "(" + value + ")") + " " + label, Kind = ChipKind.Give, ElementId = id });
+                row.Gives.Add(new Chip { Text = (numeric ? "+" + n : "(" + value + ")") + " " + label, Amount = numeric ? "+" + n : "?", Kind = ChipKind.Give, ElementId = id });
                 Add(MadeBy, id, row, numeric ? "makes " + n : "makes some");
             }
         }
@@ -313,6 +621,7 @@ namespace MarginaliaMod
         {
             if (string.IsNullOrEmpty(mutate))
                 return;
+            _mutatedHere.Add(mutate);
             if (filter == "undefined")
                 filter = null;
             string on = string.IsNullOrEmpty(filter) ? "each card" : ElementLabel(filter);
@@ -320,7 +629,7 @@ namespace MarginaliaMod
             bool numeric = TryInt(levelText, out int level);
             string amount = !numeric ? "(" + levelText + ")" : additive ? (level >= 0 ? "+" + level : "−" + -level) : "set " + level;
             bool removes = numeric && (additive ? level < 0 : level <= 0);
-            row.Gives.Add(new Chip { Text = on + ": " + amount + " " + aspect, Kind = removes ? ChipKind.Take : ChipKind.Give, ElementId = mutate });
+            row.Gives.Add(new Chip { Text = on + ": " + amount + " " + aspect, Amount = !numeric ? "?" : additive ? amount : "=" + level, Kind = removes ? ChipKind.Take : ChipKind.Give, ElementId = mutate });
             if (removes)
                 Add(UsedBy, mutate, row, "removes it from " + on);
             else
@@ -354,7 +663,7 @@ namespace MarginaliaMod
                     var filter = RoostCompat.Formula(RoostCompat.Get(decay, "Filter"));
                     if (string.IsNullOrEmpty(filter) || filter == "undefined")
                         continue;
-                    row.Gives.Add(new Chip { Text = "decays " + ElementLabel(filter), Kind = ChipKind.Take, ElementId = filter });
+                    row.Gives.Add(new Chip { Text = "decays " + ElementLabel(filter), Amount = "↓", Kind = ChipKind.Take, ElementId = filter });
                     Add(UsedBy, filter, row, "makes it decay");
                 }
             var furthermore = RoostCompat.List(grand, "Furthermore");
@@ -526,7 +835,7 @@ namespace MarginaliaMod
             if (element.Aspects != null)
                 foreach (var aspect in element.Aspects.Where(a => a.Value != 0).OrderByDescending(a => a.Value))
                 {
-                    card.Needs.Add(new Chip { Text = ElementLabel(aspect.Key) + " " + aspect.Value, Kind = ChipKind.Aspect, ElementId = aspect.Key });
+                    card.Needs.Add(new Chip { Text = ElementLabel(aspect.Key) + " " + aspect.Value, Amount = aspect.Value.ToString(CultureInfo.InvariantCulture), Kind = ChipKind.Aspect, ElementId = aspect.Key });
                     if (aspect.Value > 0)
                         Add(HeldBy, aspect.Key, card, ElementLabel(aspect.Key) + " " + aspect.Value);
                 }
@@ -548,12 +857,18 @@ namespace MarginaliaMod
             {
                 case "Mutate":
                 case "SetMutation":
-                    row.Gives.Add(new Chip { Text = prefix + (morph.Effect == "Mutate" ? "+" : "set ") + morph.Level + " " + target + chance, Kind = ChipKind.Give, ElementId = morph.Id });
+                {
+                    bool numeric = TryInt(morph.Level, out int by);
+                    bool adds = morph.Effect == "Mutate";
+                    string amount = !numeric ? "(" + morph.Level + ")" : adds ? (by < 0 ? "−" + -by : "+" + by) : "set " + by;
+                    string badge = !numeric ? "?" : adds ? (by < 0 ? "−" + -by : "+" + by) : "=" + by;
+                    row.Gives.Add(new Chip { Text = prefix + amount + " " + target + chance, Amount = badge, Kind = ChipKind.Give, ElementId = morph.Id });
                     made = "adds it to " + from;
                     used = "adds " + target + " to it";
                     break;
+                }
                 case "Spawn":
-                    row.Gives.Add(new Chip { Text = prefix + "+" + level + " " + target + chance, Kind = ChipKind.Give, ElementId = morph.Id });
+                    row.Gives.Add(new Chip { Text = prefix + "+" + level + " " + target + chance, Amount = TryInt(morph.Level, out _) ? "+" + level : "?", Kind = ChipKind.Give, ElementId = morph.Id });
                     made = "spawned by " + from;
                     used = "it spawns " + target;
                     break;
@@ -564,7 +879,7 @@ namespace MarginaliaMod
                     return true;
                 case "Transform":
                 case null:
-                    row.Gives.Add(new Chip { Text = prefix + target + chance, Kind = ChipKind.Give, ElementId = morph.Id });
+                    row.Gives.Add(new Chip { Text = prefix + target + chance, Amount = chance.Trim(), Kind = ChipKind.Give, ElementId = morph.Id });
                     made = "turns " + from + " into it";
                     used = "turns it into " + target;
                     break;

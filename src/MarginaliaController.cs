@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using SecretHistories.Constants;
 using SecretHistories.Infrastructure;
 using SecretHistories.Services;
 using SecretHistories.UI;
@@ -123,8 +124,11 @@ namespace MarginaliaMod
 
         private WikiWindow _wiki;
 
-        private bool IsModal => _menuTarget != null || _editor != null || _sizer != null || _prompt != null || _wiki.IsOpen ||
-                               RecipeExplorer.IsOpen;
+        private bool IsModal => _menuTarget != null || _editor != null || _sizer != null || _prompt != null || _wiki.IsOpen;
+
+        // The pointer is over the recipe explorer, so the mouse wheel's zoom is switched off
+        // for its scrolling. Only the wheel: the zoom keys still work.
+        private InputAction _wheelZoom;
 
         // IMGUI is laid out for 1080p and scaled to the screen.
         private static float GuiScale => Mathf.Clamp(Screen.height / 1080f, 0.75f, 3f);
@@ -252,19 +256,25 @@ namespace MarginaliaMod
                 return;
 
             SteamCloud.Tick();
+            Discovery.Tick();
             BoardLabels.Tick();
             Rulers.Tick();
 
             bool modifierHeld = Modifier(keyboard).isPressed;
             var menuButton = MenuButton(mouse);
             var position = mouse.position.ReadValue();
-            // Over the timers panel, clicks are for the panel, not the table beneath.
-            bool overPanel = TimersPanel.Contains(ToGui(position));
+            // Over the timers panel or the recipe explorer, clicks are for the panel, not the
+            // table beneath. The explorer hides while the wiki window is open.
+            var guiPosition = ToGui(position);
+            bool overExplorer = RecipeExplorer.Contains(guiPosition) && !_wiki.IsOpen;
+            bool overPanel = TimersPanel.Contains(guiPosition) || overExplorer;
             _shield.SetActive(modifierHeld || IsModal || _drag != null || _click != null || overPanel);
 
             bool buttonsDown = mouse.leftButton.isPressed || mouse.rightButton.isPressed || mouse.middleButton.isPressed;
             MenuHandle.Tick(position, HandleOn() && !modifierHeld && !IsModal && _drag == null && _click == null && !overPanel,
                 buttonsDown);
+
+            HoldWheelZoom(overExplorer);
 
             if (_drag != null)
             {
@@ -281,21 +291,23 @@ namespace MarginaliaMod
                 return;
             }
 
-            bool canOpen = _editor == null && _sizer == null && _prompt == null;
-            if (RecipeExplorer.IsOpen)
+            if (RecipeExplorer.IsOpen && !IsModal)
             {
-                // The wiki window turns zoom back on when it closes over the explorer.
-                Watchman.Get<LocalNexus>()?.DisablePlayerZoom();
-                if (canOpen && _menuTarget == null)
+                // Esc only closes it while typing in it; otherwise Esc is the game's.
+                if (RecipeExplorer.Typing && keyboard.escapeKey.wasPressedThisFrame)
                 {
-                    if (keyboard.escapeKey.wasPressedThisFrame)
-                        RecipeExplorer.Close();
-                    else if (mouse.backButton.wasPressedThisFrame)
-                        RecipeExplorer.Back();
+                    RecipeExplorer.Close();
+                    return;
                 }
-                return;
+                if (overExplorer && mouse.backButton.wasPressedThisFrame)
+                {
+                    RecipeExplorer.Back();
+                    return;
+                }
             }
 
+            // Nothing opens or moves under a panel.
+            bool canOpen = _editor == null && _sizer == null && _prompt == null && !overPanel;
             if (_click != null)
             {
                 ContinueClick(position);
@@ -312,13 +324,40 @@ namespace MarginaliaMod
                 else
                     CloseMenu();
             }
-            else if (modifierHeld && !IsModal && mouse.leftButton.wasPressedThisFrame)
+            else if (modifierHeld && !IsModal && !overPanel && mouse.leftButton.wasPressedThisFrame)
             {
                 TryStartDrag(position, mouse.leftButton);
             }
-            else if (!IsModal && mouse.leftButton.wasPressedThisFrame)
+            else if (!IsModal && !overPanel && mouse.leftButton.wasPressedThisFrame)
             {
                 TryAspectDoubleClick(position);
+            }
+        }
+
+        // While the pointer is over the explorer, the wheel scrolls it rather than zooming the
+        // table. The game's own zoom switch would also block the zoom keys, so this disables just
+        // the wheel's input action, every frame in case the game turns it back on. The wiki
+        // window uses the zoom switch itself while it's open.
+        private void HoldWheelZoom(bool hold)
+        {
+            if (hold)
+            {
+                var action = Watchman.Get<ControlsController>()?.GetPlayerInput()?.actions?.FindAction("mousezoom");
+                if (action == null || !action.enabled)
+                    return;
+                // A turn of the wheel this very frame would leave the camera drifting, since its
+                // return to 0 is now lost; stop it. Only then, so a held zoom key keeps zooming.
+                bool turning = action.ReadValue<float>() != 0f || (Mouse.current?.scroll.y.ReadValue() ?? 0f) != 0f;
+                action.Disable();
+                _wheelZoom = action;
+                if (turning)
+                    Watchman.Get<LocalNexus>()?.ZoomLevelEvent?.Invoke(new ZoomLevelEventArgs { CurrentZoomInput = 0f });
+            }
+            else if (_wheelZoom != null)
+            {
+                if (_wheelZoom.actionMap == null || _wheelZoom.actionMap.enabled)
+                    _wheelZoom.Enable();
+                _wheelZoom = null;
             }
         }
 
@@ -438,7 +477,7 @@ namespace MarginaliaMod
             var eventSystem = EventSystem.current;
             if (eventSystem == null)
                 return;
-            if (IsModal)
+            if (IsModal || RecipeExplorer.Typing)
             {
                 if (eventSystem.currentSelectedGameObject != _focusSink)
                     eventSystem.SetSelectedGameObject(_focusSink);
@@ -568,7 +607,7 @@ namespace MarginaliaMod
 
         private void OnGUI()
         {
-            if (!IsModal && !TimersPanel.IsOpen)
+            if (!IsModal && !TimersPanel.IsOpen && !RecipeExplorer.IsOpen)
                 return;
 
             Styles.Ensure();
@@ -577,14 +616,25 @@ namespace MarginaliaMod
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
             var screen = new Rect(0f, 0f, Screen.width / scale, Screen.height / scale);
 
-            // Drawn first, so the menu and dialogs go over them; only usable when nothing
-            // else wants the keyboard. The wiki window is uGUI, which IMGUI would cover,
-            // so the explorer waits behind it and comes back when it closes.
+            // The panels are drawn first, so the menu and dialogs go over them; they're only
+            // usable when no dialog wants the keyboard. The wiki window is uGUI, which IMGUI
+            // would cover, so they wait behind it and come back when it closes.
             bool dialogOpen = _editor != null || _sizer != null || _prompt != null;
-            if (!_wiki.IsOpen && RecipeExplorer.IsOpen)
-                RecipeExplorer.Draw(screen, !dialogOpen && _menuTarget == null);
-            else if (!_wiki.IsOpen)
-                TimersPanel.Draw(screen, !dialogOpen);
+            if (!_wiki.IsOpen)
+            {
+                // IMGUI hands input to whatever is drawn first, and the explorer goes over the
+                // timers, so the timers take no press over the explorer, and neither panel takes
+                // one while the menu is open (a click elsewhere closes it). Only the press is held
+                // back: a release or drag still reaches a control already pressed, so nothing is
+                // left half-pressed, and the panels aren't dimmed.
+                var e = Event.current;
+                bool press = e.type == EventType.MouseDown;
+                bool overExplorer = RecipeExplorer.Contains(e.mousePosition);
+                RecipeExplorer.LetGoOfKeyboard(!dialogOpen);
+                TimersPanel.Draw(screen, !dialogOpen &&
+                                         !(press && (overExplorer || _menuTarget != null) && !TimersPanel.Dragging));
+                RecipeExplorer.Draw(screen, !dialogOpen && !(press && _menuTarget != null));
+            }
             if (!IsModal)
                 return;
 

@@ -5,6 +5,7 @@ using SecretHistories.Entities;
 using SecretHistories.Enums;
 using SecretHistories.UI;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace MarginaliaMod
 {
@@ -21,12 +22,18 @@ namespace MarginaliaMod
         private const string RingGroup = "timers";
         private const float RingSeconds = 3f;
 
-        public static bool IsOpen { get; private set; }
+        private const string LayoutName = "timers";
+
+        // Open, as remembered between sessions; it only shows while a game is on the table.
+        private static bool _open;
+
+        public static bool IsOpen => _open && BoardLabels.IsAttached;
 
         // In IMGUI's scaled coordinates. x < 0 until first placed, at the right edge.
         private static Rect _rect = new Rect(-1f, 140f, Width, 100f);
         private static bool _dragging;
         private static Vector2 _dragOffset;
+        private static PanelPointer _pointer;
         private static float _ringUntil;
         private static GUIStyle _labelStyle, _timeStyle, _markStyle;
 
@@ -50,11 +57,32 @@ namespace MarginaliaMod
                 Order = 36,
                 Label = _ => IsOpen ? "Hide timers" : "Show timers",
                 IsVisible = t => t.Kind == TargetKind.Board || t.Kind == TargetKind.Ruler,
-                Execute = _ => IsOpen = !IsOpen
+                Execute = _ => SetOpen(!_open)
             });
         }
 
         public static bool Contains(Vector2 guiPoint) => IsOpen && (_dragging || _rect.Contains(guiPoint));
+
+        public static bool Dragging => IsOpen && _dragging;
+
+        // Back where it was last time, open or not.
+        public static void Restore()
+        {
+            var saved = PanelLayout.Get(LayoutName);
+            if (saved == null)
+                return;
+            if (saved.X >= 0f)
+                _rect.position = new Vector2(saved.X, saved.Y);
+            _open = saved.Open;
+        }
+
+        private static void SetOpen(bool open)
+        {
+            _open = open;
+            SaveLayout();
+        }
+
+        private static void SaveLayout() => PanelLayout.Save(LayoutName, _rect, _open);
 
         private static void Refresh()
         {
@@ -105,16 +133,20 @@ namespace MarginaliaMod
             _rect.x = Mathf.Clamp(_rect.x, 0f, Mathf.Max(0f, screen.width - Width));
             _rect.y = Mathf.Clamp(_rect.y, 0f, Mathf.Max(0f, screen.height - HeaderH));
 
+            // A release outside the game window never reaches IMGUI.
+            if (_dragging && Mouse.current != null && !Mouse.current.leftButton.isPressed)
+                EndDrag();
+
             bool wasEnabled = GUI.enabled;
             GUI.enabled = interactive;
-            if (interactive)
-                Drag();
+            if (interactive || _dragging)
+                Drag(screen);
 
             GUI.Box(_rect, GUIContent.none, Styles.Panel);
             float x = _rect.x, y = _rect.y + Pad;
             GUI.Label(new Rect(x + Pad, y, Width - Pad * 2f - 70f, HeaderH - 4f), "Timers", Styles.Title);
             if (GUI.Button(new Rect(x + Width - Pad - 64f, y, 64f, 26f), "Close", Styles.Button))
-                IsOpen = false;
+                SetOpen(false);
             y += HeaderH;
             GUI.Box(new Rect(x + Pad, y - 4f, Width - Pad * 2f, 1f), GUIContent.none, Styles.Rule);
 
@@ -132,13 +164,21 @@ namespace MarginaliaMod
                     row.Remaining.ToString("0.0", CultureInfo.InvariantCulture) + "s", _timeStyle);
                 y += rowH;
             }
+            // Invisible stand-ins for the empty rows, so the panel takes the same IMGUI ids every
+            // frame. IMGUI ids are counted in order, so a row coming or going would otherwise
+            // shift the ids of the recipe explorer drawn after it, and its search box would lose
+            // the keyboard mid-word.
+            GUI.enabled = false;
+            for (int i = Rows.Count; i < MaxRows; i++)
+                GUI.Button(new Rect(-10000f, -10000f, 1f, 1f), GUIContent.none, GUIStyle.none);
+            GUI.enabled = interactive;
             if (_more > 0)
                 GUI.Label(new Rect(x + Pad, y, Width - Pad * 2f, rowH), "and " + _more + " more", Styles.Hint);
             GUI.enabled = wasEnabled;
         }
 
         // Drag by the title bar.
-        private static void Drag()
+        private static void Drag(Rect screen)
         {
             var e = Event.current;
             var header = new Rect(_rect.x, _rect.y, Width - Pad - 70f, HeaderH + Pad);
@@ -146,17 +186,27 @@ namespace MarginaliaMod
             {
                 _dragging = true;
                 _dragOffset = _rect.position - e.mousePosition;
+                _pointer.Begin(e.mousePosition);
                 e.Use();
             }
             else if (_dragging && e.type == EventType.MouseDrag)
             {
-                _rect.position = e.mousePosition + _dragOffset;
+                // Not past the left edge: x < 0 means "not placed yet".
+                var to = _pointer.Read(e.mousePosition, screen) + _dragOffset;
+                _rect.position = new Vector2(Mathf.Max(0f, to.x), to.y);
                 e.Use();
             }
             else if (_dragging && (e.type == EventType.MouseUp || e.rawType == EventType.MouseUp))
             {
-                _dragging = false;
+                EndDrag();
             }
+        }
+
+        // Done moving: remember where it ended up.
+        private static void EndDrag()
+        {
+            _dragging = false;
+            SaveLayout();
         }
 
         private static void Ring(Token token)

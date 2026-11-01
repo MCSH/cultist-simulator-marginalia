@@ -21,9 +21,13 @@ namespace MarginaliaMod
 
         public static string FilePath => Path.Combine(Application.persistentDataPath, "marginalia.json");
 
+        // Goes up whenever the notes change, so views that show them know to refresh.
+        public static int Version { get; private set; }
+
         public static void Load()
         {
             _notes = JsonFile.Read(FilePath, new Dictionary<string, Entry>());
+            Version++;
         }
 
         public static string Get(MenuTarget target)
@@ -42,13 +46,16 @@ namespace MarginaliaMod
                 _notes.Remove(target.NoteKey);
             else
                 _notes[target.NoteKey] = new Entry { Label = target.Label, Text = text, Updated = DateTime.UtcNow };
+            Version++;
             JsonFile.Write(FilePath, _notes);
         }
 
         public static void Delete(MenuTarget target)
         {
-            if (_notes.Remove(target.NoteKey))
-                JsonFile.Write(FilePath, _notes);
+            if (!_notes.Remove(target.NoteKey))
+                return;
+            Version++;
+            JsonFile.Write(FilePath, _notes);
         }
     }
 }

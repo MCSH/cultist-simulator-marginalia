@@ -41,6 +41,12 @@ namespace MarginaliaMod
         private static string[] _paths = new string[0];
         private static Action _reload;
 
+        // Files that only grow (a JSON list, like the discovered recipes): rather than the
+        // newer copy winning, both sides end up with everything either had.
+        private static readonly HashSet<string> Growing = new HashSet<string>();
+
+        public static void Grows(string path) => Growing.Add(path);
+
         // Null until the first sync has happened.
         private static Dictionary<string, Entry> _cloud;
         private static bool _off;
@@ -99,7 +105,12 @@ namespace MarginaliaMod
                 return;
             try
             {
-                _cloud[Path.GetFileName(path)] = new Entry { Updated = File.GetLastWriteTimeUtc(path), Data = JToken.Parse(json) };
+                string name = Path.GetFileName(path);
+                var data = JToken.Parse(json);
+                // A growing file never shrinks in the cloud, whatever happened at the first sync.
+                if (Growing.Contains(path) && data is JArray mine && _cloud.TryGetValue(name, out var old) && old.Data is JArray theirs)
+                    data = new JArray(new SortedSet<string>(mine.Select(t => (string)t).Concat(theirs.Select(t => (string)t)), StringComparer.Ordinal));
+                _cloud[name] = new Entry { Updated = File.GetLastWriteTimeUtc(path), Data = data };
                 WriteCloud();
             }
             catch (Exception ex)
@@ -114,6 +125,12 @@ namespace MarginaliaMod
             _cloud.TryGetValue(name, out var cloud);
             bool local = File.Exists(path);
             var localTime = local ? File.GetLastWriteTimeUtc(path) : DateTime.MinValue;
+
+            if (local && cloud != null && Growing.Contains(path))
+            {
+                Combine(path, name, cloud, ref localChanged, ref cloudChanged);
+                return;
+            }
 
             if (cloud != null && (!local || cloud.Updated - localTime > Slack))
             {
@@ -135,6 +152,33 @@ namespace MarginaliaMod
                 {
                     NoonUtility.LogWarning("Marginalia: not saving " + name + " to Steam Cloud, it can't be read: " + ex.Message);
                 }
+            }
+        }
+
+        // A growing file on both sides: each takes whatever the other has that it lacks.
+        private static void Combine(string path, string name, Entry cloud, ref bool localChanged, ref bool cloudChanged)
+        {
+            try
+            {
+                // Read as Discovery reads it: an empty file is an empty list.
+                var mine = new HashSet<string>(JsonConvert.DeserializeObject<List<string>>(File.ReadAllText(path)) ?? new List<string>());
+                var theirs = new HashSet<string>((cloud.Data as JArray)?.Select(t => (string)t) ?? Enumerable.Empty<string>());
+                var both = new SortedSet<string>(mine.Concat(theirs), StringComparer.Ordinal);
+                var json = new JArray(both).ToString(Formatting.Indented);
+                if (both.Count > mine.Count && JsonFile.WriteText(path, json))
+                {
+                    localChanged = true;
+                    NoonUtility.Log("Marginalia: added " + (both.Count - mine.Count) + " from Steam Cloud to " + name);
+                }
+                if (both.Count > theirs.Count)
+                {
+                    _cloud[name] = new Entry { Updated = File.GetLastWriteTimeUtc(path), Data = JToken.Parse(json) };
+                    cloudChanged = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                NoonUtility.LogWarning("Marginalia: couldn't combine " + name + " with its Steam Cloud copy: " + ex.Message);
             }
         }
 

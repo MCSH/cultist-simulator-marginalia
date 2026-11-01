@@ -14,5 +14,9 @@ dotnet build src/Marginalia.csproj -c Release -p:GameDir="$GAME_DIR" -nologo -v 
 mkdir -p "$DEST/dll"
 # serapeum_catalogue_number.txt holds the Workshop id, so the in-game Upload updates the existing item.
 cp mod/synopsis.json mod/cover.png mod/serapeum_catalogue_number.txt "$DEST/"
-cp src/bin/Release/Marginalia.dll "$DEST/dll/"
+# Replaced, not overwritten: a running game reads its DLL lazily, and writing over it in
+# place scrambles the game's copy (BadImageFormatException: Method has zero rva). Renamed
+# into place, the running game keeps the old one and the next start loads the new one.
+cp src/bin/Release/Marginalia.dll "$DEST/dll/Marginalia.dll.new"
+mv -f "$DEST/dll/Marginalia.dll.new" "$DEST/dll/Marginalia.dll"
 echo "Installed to $DEST"
