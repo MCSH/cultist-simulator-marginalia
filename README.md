@@ -67,14 +67,16 @@ On the board:
 
 - **Alt + right-click** empty table, then pick **Write on the board…**. The text appears where you clicked, under the cards, and moves with the table when you pan and zoom.
 - **Alt + right-click** a label to **Edit**, make it **Larger** or **Smaller** (the menu stays open so you can click repeatedly), or **Rub out** (delete) it.
-- **Middle-drag** or **Alt + left-drag** a label to move it.
+- A label that runs to more than one line has a small arrow in its top-right corner. Click the arrow to fold the label to its first line (the arrow then points down), and click it again to open it out. **Fold to its first line** on its menu does the same.
+- **Background** on a label's menu switches between a dark panel, an outline, transparent (just the text) and parchment. The menu stays open so you can click through them.
+- **Middle-drag** or **Alt + left-drag** a label to move it. Labels can go past the table's edge; they stop when the pointer reaches the edge of the window, so you can always pick them up again.
 
 The board list:
 
 - **Board list…** on the board menu opens a floating panel listing everything written or drawn on the table: board labels, grids and lines. Tabs show them all or one kind at a time, and the search box finds labels by their text. Hover a row and that label or ruler lights up on the table.
-- Each row has **go** (the camera goes to it), **here** (moves it to the middle of the view), **edit** (a label's text, a ruler's size) and **×** (delete). Click a row's text to go to it.
+- Each row has **go** (the camera goes to it, or as near as it can), **here** (moves it to the middle of the view), **edit** (a label's text, a ruler's size) and **×** (delete). Click a row's text to go to it.
 - Tick rows (or **select all**) to **bring here** or **delete** several at once; delete asks once more before it goes ahead.
-- Something that has ended up off the table, where neither the camera nor the mouse can reach it, says **off the table** and gets its own tab: bring it back with **here**, or delete it. Dragging a label or ruler now stops at the table's edge, so nothing more goes astray.
+- Something entirely off the table says **off the table** and gets its own tab: bring it back with **here**, or delete it. Dragging a ruler stops at the table's edge; labels can go past it.
 - Like the explorer, drag it by its title, resize it by its corner, and it remembers where it was and whether it was open.
 
 Rulers, for laying cards out by hand:

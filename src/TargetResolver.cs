@@ -44,6 +44,11 @@ namespace MarginaliaMod
                     return BoardTarget(screenPosition);
             }
 
+            // Past the table's edge there's nothing for a raycast to hit, but a label can be there.
+            var label = BoardLabels.LabelAt(screenPosition);
+            if (label != null)
+                return MenuTarget.ForBoardLabel(label);
+
             if (Hits.Count > 0)
                 NoonUtility.Log("Marginalia: nothing to annotate under pointer; top hit was " + Path(Hits[0].gameObject));
             return null;

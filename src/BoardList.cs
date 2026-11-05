@@ -9,9 +9,9 @@ namespace MarginaliaMod
 {
     // A floating panel listing what's been put on the table: board labels, grids and lines.
     // Each can be found (the camera goes to it), fetched to the middle of the view, edited or
-    // rubbed out, and several at once can be selected to fetch or delete. Anything that has
-    // ended up off the table, where neither the camera nor the mouse can reach it, is marked,
-    // so it can be brought back or deleted. Drag it by its title bar, resize it by its corner.
+    // rubbed out, and several at once can be selected to fetch or delete. Anything entirely
+    // off the table is marked, so it can be brought back or deleted; the camera only gets as
+    // near as it's allowed. Drag it by its title bar, resize it by its corner.
     public static class BoardList
     {
         private const string LayoutName = "board";
@@ -307,7 +307,7 @@ namespace MarginaliaMod
             int labels = items.Count(i => i.Kind == Kind.Label), grids = items.Count(i => i.Kind == Kind.Grid);
             int lines = items.Count(i => i.Kind == Kind.Line), off = items.Count(i => i.Off);
             string summary = Plural(labels, "label") + " · " + Plural(grids, "grid") + " · " + Plural(lines, "line") +
-                             (off > 0 ? " · " + off + " off the table, out of reach: bring them back or delete them" : "");
+                             (off > 0 ? " · " + off + " off the table" : "");
             float summaryH = _summary.CalcHeight(new GUIContent(summary), inner);
             GUI.Label(new Rect(x, y, inner, summaryH), summary, off > 0 ? _off : _summary);
             y += summaryH + 6f;
@@ -506,16 +506,14 @@ namespace MarginaliaMod
             if (Button(new Rect(bx, cy, 40f, 20f), "here", _small, "Bring it to the middle of the view", tips))
                 _pending = () => Fetch(new[] { item });
             bx -= 30f + 4f;
-            bool wasEnabled = GUI.enabled;
-            GUI.enabled = wasEnabled && !item.Off;
-            if (Button(new Rect(bx, cy, 30f, 20f), "go", _small, item.Off ? "It's off the table: the camera can't get there" : "Go to it", tips))
+            string goTip = item.Off ? "It's off the table: the camera goes as near as it can" : "Go to it";
+            if (Button(new Rect(bx, cy, 30f, 20f), "go", _small, goTip, tips))
                 _pending = () => GoTo(item);
-            GUI.enabled = wasEnabled;
 
-            // Its text (click it to go there, if it can be reached), and whether it's out of reach.
+            // Its text (click it to go there), and whether it's off the table.
             float offW = item.Off ? 76f : 0f;
             var textRect = new Rect(x, row.y, bx - x - 6f - offW, RowH);
-            if (Button(textRect, item.Text, _text, item.Off ? null : "Go to it", tips) && !item.Off)
+            if (Button(textRect, item.Text, _text, goTip, tips))
                 _pending = () => GoTo(item);
             if (_text.CalcSize(new GUIContent(item.Text)).x > textRect.width && tips)
                 TipIfHovered(textRect, item.Text);

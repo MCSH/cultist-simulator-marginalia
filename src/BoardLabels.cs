@@ -2,10 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 using SecretHistories.Spheres;
 using SecretHistories.UI;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace MarginaliaMod
@@ -16,6 +19,16 @@ namespace MarginaliaMod
     // marginalia_board.json beside the saves.
     public static class BoardLabels
     {
+        // In the order the menu goes through them. Labels written before there was a choice
+        // have the first.
+        public enum Background
+        {
+            Panel,
+            Outline,
+            Transparent,
+            Parchment
+        }
+
         public sealed class Data
         {
             public string Id;
@@ -23,11 +36,17 @@ namespace MarginaliaMod
             public float X;
             public float Y;
             public float Size = 1f;
+            public bool Folded;
+
+            [JsonConverter(typeof(StringEnumConverter))]
+            public Background Background;
         }
 
         // Cards are ~115 units tall; a size-1 label is about a quarter of that.
         private const float BaseFontSize = 28f;
         private const float WrapWidth = 900f;
+        // Still something to click on the smallest labels.
+        private const float MinArrowSize = 20f;
         public const float MinSize = 0.4f;
         public const float MaxSize = 6f;
 
@@ -40,10 +59,36 @@ namespace MarginaliaMod
         // Picked out from the board list: a bright edge.
         private static readonly Color HighlightEdge = new Color(1f, 0.92f, 0.6f, 1f);
 
+        private readonly struct Look
+        {
+            public readonly string Name;
+            public readonly Color Fill, Edge, Ink;
+
+            public Look(string name, Color fill, Color edge, Color ink)
+            {
+                Name = name;
+                Fill = fill;
+                Edge = edge;
+                Ink = ink;
+            }
+        }
+
+        // One for each Background, in the same order.
+        private static readonly Look[] Looks =
+        {
+            new Look("dark panel", PanelFill, PanelEdge, Ink),
+            new Look("outline", Color.clear, PanelEdge, Ink),
+            new Look("transparent", Color.clear, Color.clear, Ink),
+            new Look("parchment", new Color(0.87f, 0.8f, 0.64f, 0.96f), new Color(0.32f, 0.22f, 0.11f, 0.9f), new Color(0.13f, 0.09f, 0.05f, 1f))
+        };
+
         private sealed class View
         {
             public RectTransform Panel;
             public TextMeshProUGUI Text;
+            public LabelArrow Arrow;
+            // It runs to more than one line, so there's something to fold.
+            public bool Foldable;
         }
 
         private static List<Data> _labels = new List<Data>();
@@ -143,7 +188,20 @@ namespace MarginaliaMod
         {
             if (id == null || !Views.TryGetValue(id, out var view) || view == null)
                 return;
-            view.Panel.GetComponent<Image>().sprite = UiKit.Panel(PanelFill, id == _highlighted ? HighlightEdge : PanelEdge);
+            var look = Looks[(int)(Get(id)?.Background ?? Background.Panel)];
+            view.Panel.GetComponent<Image>().sprite = UiKit.Panel(look.Fill, id == _highlighted ? HighlightEdge : look.Edge);
+            view.Text.color = look.Ink;
+            view.Arrow.color = look.Ink;
+        }
+
+        public static string BackgroundName(Data label) => Looks[(int)label.Background].Name;
+
+        // On to the next kind of background, and round again.
+        public static void NextBackground(Data label)
+        {
+            label.Background = (Background)(((int)label.Background + 1) % Looks.Length);
+            Tint(label.Id);
+            Save();
         }
 
         public static void RemoveMany(IEnumerable<Data> labels)
@@ -258,6 +316,23 @@ namespace MarginaliaMod
                 view.Panel.localPosition = position;
         }
 
+        public static bool CanFold(Data label) => Views.TryGetValue(label.Id, out var view) && view != null && view.Foldable;
+
+        // Its top-right corner stays where it is, and the arrow with it, so the same spot
+        // folds it and opens it again.
+        public static void SetFolded(Data label, bool folded)
+        {
+            if (!CanFold(label) || label.Folded == folded)
+                return;
+            var view = Views[label.Id];
+            var before = view.Panel.sizeDelta;
+            label.Folded = folded;
+            Refresh(label);
+            var shift = (before - view.Panel.sizeDelta) / 2f;
+            Move(label, new Vector2(label.X + shift.x, label.Y + shift.y));
+            Save();
+        }
+
         public static void Remove(Data label)
         {
             _labels.Remove(label);
@@ -292,12 +367,16 @@ namespace MarginaliaMod
             text.alignment = TextAlignmentOptions.Center;
             text.enableWordWrapping = true;
             text.richText = false;
-            text.color = Ink;
             var textRect = text.rectTransform;
             textRect.anchorMin = Vector2.zero;
             textRect.anchorMax = Vector2.one;
 
-            Views[label.Id] = new View { Panel = (RectTransform)panelObject.transform, Text = text };
+            var arrowRect = UiKit.Rect("Arrow", panelObject.transform);
+            arrowRect.anchorMin = arrowRect.anchorMax = arrowRect.pivot = Vector2.one;
+            var arrow = arrowRect.gameObject.AddComponent<LabelArrow>();
+            arrow.Label = label;
+
+            Views[label.Id] = new View { Panel = (RectTransform)panelObject.transform, Text = text, Arrow = arrow };
             Refresh(label);
             Tint(label.Id);
         }
@@ -306,15 +385,71 @@ namespace MarginaliaMod
         {
             if (!Views.TryGetValue(label.Id, out var view) || view == null)
                 return;
-            view.Text.text = label.Text;
-            view.Text.fontSize = BaseFontSize * label.Size;
-            var preferred = view.Text.GetPreferredValues(label.Text, WrapWidth * label.Size, 0f);
-            var textSize = new Vector2(Mathf.Min(preferred.x, WrapWidth * label.Size), preferred.y);
+            var text = view.Text;
+            float wrap = WrapWidth * label.Size;
             var padding = Padding * label.Size;
-            view.Text.rectTransform.offsetMin = padding;
-            view.Text.rectTransform.offsetMax = -padding;
-            view.Panel.sizeDelta = textSize + padding * 2f;
+            text.fontSize = BaseFontSize * label.Size;
+            text.enableWordWrapping = true;
+
+            // Laid out in full first: that says what its first line is, and if there's more.
+            var preferred = text.GetPreferredValues(label.Text, wrap, 0f);
+            var textSize = new Vector2(Mathf.Min(preferred.x, wrap), preferred.y);
+            Fit(view, textSize, padding, 0f);
+            string first = FirstLine(text, label.Text);
+            view.Foldable = first != null;
+            float lineBox = view.Foldable ? text.GetPreferredValues(first, wrap, 0f).y + padding.y * 2f : 0f;
+
+            float arrow = view.Foldable ? Mathf.Max(BaseFontSize * label.Size, MinArrowSize) : 0f;
+            bool folded = view.Foldable && label.Folded;
+            string shown = label.Text;
+            if (folded)
+            {
+                // Plain dots: the game's font may not have the single character.
+                shown = first + " ...";
+                // It's one line however long, even with the dots.
+                text.enableWordWrapping = false;
+                textSize = text.GetPreferredValues(shown, wrap, 0f);
+            }
+            Fit(view, textSize, padding, arrow);
+            text.text = shown;
+            // Measuring leaves its own idea of the text behind, so draw it again.
+            text.ForceMeshUpdate(true, true);
+
+            view.Arrow.gameObject.SetActive(view.Foldable);
+            if (view.Foldable)
+            {
+                // Level with the first line.
+                var arrowRect = view.Arrow.rectTransform;
+                arrowRect.sizeDelta = new Vector2(arrow, arrow);
+                arrowRect.anchoredPosition = new Vector2(-padding.x / 2f, -Mathf.Max(lineBox - arrow, 0f) / 2f);
+                view.Arrow.Folded = folded;
+                view.Arrow.SetVerticesDirty();
+            }
             view.Panel.localPosition = new Vector2(label.X, label.Y);
+        }
+
+        // The panel around text of this size, with room beside it for the arrow.
+        private static void Fit(View view, Vector2 textSize, Vector2 padding, float arrow)
+        {
+            view.Text.rectTransform.offsetMin = padding;
+            view.Text.rectTransform.offsetMax = -padding - new Vector2(arrow, 0f);
+            view.Panel.sizeDelta = new Vector2(textSize.x + padding.x * 2f + arrow, Mathf.Max(textSize.y + padding.y * 2f, arrow));
+        }
+
+        // The first line as it's laid out in the text's current size, wrapped or not, or null
+        // if that's all there is.
+        private static string FirstLine(TextMeshProUGUI text, string source)
+        {
+            var info = text.GetTextInfo(source);
+            if (info.lineCount < 2)
+                return null;
+            var line = info.lineInfo[0];
+            var start = info.characterInfo[line.firstCharacterIndex];
+            var end = info.characterInfo[line.lastCharacterIndex];
+            int from = Mathf.Clamp(start.index, 0, source.Length);
+            int to = Mathf.Clamp(end.index + end.stringLength, from, source.Length);
+            string first = source.Substring(from, to - from).Trim();
+            return first.Length > 0 ? first : null;
         }
 
         private static Camera Camera()
@@ -324,6 +459,42 @@ namespace MarginaliaMod
                 return null;
             return canvas.worldCamera;
         }
+    }
+
+    // The arrow on a label of several lines: down to open it, up to fold it. The one part of
+    // a label the game's pointer events can land on, since it sits under the cards anyway.
+    internal class LabelArrow : MaskableGraphic, ICanvasRaycastFilter, IPointerClickHandler, IPointerDownHandler, IPointerUpHandler
+    {
+        public BoardLabels.Data Label;
+        public bool Folded;
+
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            vh.Clear();
+            var rect = rectTransform.rect;
+            float halfWidth = rect.width * 0.28f;
+            float halfHeight = rect.height * 0.18f * (Folded ? 1f : -1f);
+            var centre = rect.center;
+            vh.AddVert(centre + new Vector2(-halfWidth, halfHeight), color, Vector2.zero);
+            vh.AddVert(centre + new Vector2(halfWidth, halfHeight), color, Vector2.zero);
+            vh.AddVert(centre + new Vector2(0f, -halfHeight), color, Vector2.zero);
+            vh.AddTriangle(0, 1, 2);
+        }
+
+        // A card let go over the arrow has to land on the table. What catches it is beside the
+        // labels, not above them, so a drop on the arrow would never get there.
+        public bool IsRaycastLocationValid(Vector2 sp, Camera eventCamera) =>
+            Watchman.Get<Meniscate>()?.GetCurrentlyDraggedToken()?.IsValid() != true;
+
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            if (eventData.button == PointerEventData.InputButton.Left)
+                BoardLabels.SetFolded(Label, !Label.Folded);
+        }
+
+        // Taken so they don't reach anything underneath.
+        public void OnPointerDown(PointerEventData eventData) { }
+        public void OnPointerUp(PointerEventData eventData) { }
     }
 
     public static class BoardMenuItems
@@ -355,6 +526,14 @@ namespace MarginaliaMod
             });
             ContextMenuRegistry.Register(new ContextMenuItem
             {
+                Id = "board.fold",
+                Order = 5,
+                Label = t => BoardLabels.Get(t.Id)?.Folded == true ? "Open it out" : "Fold to its first line",
+                IsVisible = t => t.Kind == TargetKind.BoardLabel && BoardLabels.Get(t.Id) is BoardLabels.Data label && BoardLabels.CanFold(label),
+                Execute = t => WithLabel(t, label => BoardLabels.SetFolded(label, !label.Folded))
+            });
+            ContextMenuRegistry.Register(new ContextMenuItem
+            {
                 Id = "board.larger",
                 Order = 10,
                 Label = _ => "Larger",
@@ -370,6 +549,15 @@ namespace MarginaliaMod
                 IsVisible = t => t.Kind == TargetKind.BoardLabel && BoardLabels.Get(t.Id)?.Size > BoardLabels.MinSize,
                 KeepOpen = true,
                 Execute = t => WithLabel(t, label => BoardLabels.Resize(label, 1f / Step))
+            });
+            ContextMenuRegistry.Register(new ContextMenuItem
+            {
+                Id = "board.background",
+                Order = 12,
+                Label = t => "Background: " + (BoardLabels.Get(t.Id) is BoardLabels.Data label ? BoardLabels.BackgroundName(label) : ""),
+                IsVisible = t => t.Kind == TargetKind.BoardLabel && BoardLabels.Get(t.Id) != null,
+                KeepOpen = true,
+                Execute = t => WithLabel(t, BoardLabels.NextBackground)
             });
             ContextMenuRegistry.Register(new ContextMenuItem
             {

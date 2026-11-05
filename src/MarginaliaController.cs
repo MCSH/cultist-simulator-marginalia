@@ -434,7 +434,8 @@ namespace MarginaliaMod
                     Button = button,
                     Offset = new Vector2(label.X, label.Y) - pointer,
                     Alive = () => BoardLabels.Get(label.Id) != null,
-                    MoveTo = p => BoardLabels.MoveOnTable(label, p),
+                    // Labels may go past the table's edge; rulers line up with cards, so they stay on it.
+                    MoveTo = p => BoardLabels.Move(label, p),
                     Done = BoardLabels.Save
                 };
             }
@@ -458,6 +459,9 @@ namespace MarginaliaMod
                 _drag = null;
                 return;
             }
+            // Past the window's edge the pointer can't come back for it: whatever is dragged
+            // stops with its grabbed point on screen, so it can always be picked up again.
+            position = new Vector2(Mathf.Clamp(position.x, 0f, Screen.width), Mathf.Clamp(position.y, 0f, Screen.height));
             if (BoardLabels.ScreenToBoard(position, out var pointer))
                 _drag.MoveTo(pointer + _drag.Offset);
             if (!_drag.Button.isPressed)
