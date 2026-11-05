@@ -1,21 +1,27 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using SecretHistories.Constants;
 using SecretHistories.Entities;
 using SecretHistories.Enums;
+using SecretHistories.Infrastructure;
 using SecretHistories.UI;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace MarginaliaMod
 {
-    // A small panel listing every running verb and decaying card, soonest first. Clicking
-    // a row rings that token. It stays open while you play; drag it by its title.
+    // A small panel with the game's speed controls over a list of every running verb and
+    // decaying card, soonest first. Clicking a row rings that token. It stays open while you
+    // play; drag it by its title.
     public static class TimersPanel
     {
         private const float Width = 330f;
         private const float Pad = 10f;
         private const float HeaderH = 34f;
+        private const float ControlH = 26f;
+        private const float ControlsH = ControlH + 10f;
+        private const float ControlGap = 6f;
         private const float TimeW = 80f;
         private const float MarkW = 56f;
         private const int MaxRows = 14;
@@ -35,7 +41,7 @@ namespace MarginaliaMod
         private static Vector2 _dragOffset;
         private static PanelPointer _pointer;
         private static float _ringUntil;
-        private static GUIStyle _labelStyle, _timeStyle, _markStyle;
+        private static GUIStyle _labelStyle, _timeStyle, _markStyle, _controlStyle, _controlOnStyle;
 
         private sealed class Row
         {
@@ -123,11 +129,15 @@ namespace MarginaliaMod
                 _labelStyle = new GUIStyle(Styles.Item) { wordWrap = false, clipping = TextClipping.Clip };
                 _timeStyle = new GUIStyle(Styles.Item) { alignment = TextAnchor.MiddleRight, wordWrap = false };
                 _markStyle = new GUIStyle(Styles.Hint) { alignment = TextAnchor.MiddleRight };
+                _controlStyle = new GUIStyle(Styles.Button) { fontSize = 13, fixedHeight = 0f };
+                _controlOnStyle = new GUIStyle(_controlStyle);
+                _controlOnStyle.normal.background = Styles.Bordered(UiKit.Ember, UiKit.Brass);
+                _controlOnStyle.normal.textColor = Color.white;
             }
 
             float rowH = Styles.Item.fixedHeight;
             int lines = Mathf.Max(1, Rows.Count) + (_more > 0 ? 1 : 0);
-            _rect.height = Pad + HeaderH + lines * rowH + Pad;
+            _rect.height = Pad + HeaderH + ControlsH + lines * rowH + Pad;
             if (_rect.x < 0f)
                 _rect.x = screen.width - Width - 24f;
             _rect.x = Mathf.Clamp(_rect.x, 0f, Mathf.Max(0f, screen.width - Width));
@@ -148,6 +158,11 @@ namespace MarginaliaMod
             if (GUI.Button(new Rect(x + Width - Pad - 64f, y, 64f, 26f), "Close", Styles.Button))
                 SetOpen(false);
             y += HeaderH;
+            GUI.Box(new Rect(x + Pad, y - 4f, Width - Pad * 2f, 1f), GUIContent.none, Styles.Rule);
+
+            DrawControls(x + Pad, y + 2f, interactive);
+            GUI.enabled = interactive;
+            y += ControlsH;
             GUI.Box(new Rect(x + Pad, y - 4f, Width - Pad * 2f, 1f), GUIContent.none, Styles.Rule);
 
             if (Rows.Count == 0)
@@ -175,6 +190,50 @@ namespace MarginaliaMod
             if (_more > 0)
                 GUI.Label(new Rect(x + Pad, y, Width - Pad * 2f, rowH), "and " + _more + " more", Styles.Hint);
             GUI.enabled = wasEnabled;
+        }
+
+        // Pause, one tick, x1, x2: all four every time, greyed out if need be, so the IMGUI ids
+        // below them stay the same (see the stand-ins above).
+        private static void DrawControls(float x, float y, bool interactive)
+        {
+            var heart = Watchman.Exists<Heart>() ? Watchman.Get<Heart>() : null;
+            var nexus = Watchman.Exists<LocalNexus>() ? Watchman.Get<LocalNexus>() : null;
+            bool usable = heart != null && nexus != null && !heart.Metapaused && !heart.IsForcePaused() && !nexus.PlayerInputDisabled();
+            var speed = heart != null ? heart.GetEffectiveGameSpeed() : GameSpeed.DeferToNextLowestCommand;
+            GUI.enabled = interactive && usable;
+
+            const float wide = 84f;
+            float narrow = (Width - Pad * 2f - ControlGap * 3f - wide * 2f) / 2f;
+            string stepKey = MarginaliaController.Instance.StepKeyName;
+
+            // As the game's own pause key: it goes back to the speed from before the pause.
+            if (GUI.Button(new Rect(x, y, wide, ControlH), "Pause", speed == GameSpeed.Paused ? _controlOnStyle : _controlStyle))
+            {
+                if (speed == GameSpeed.Paused)
+                    nexus.UnPauseGame(true);
+                else
+                    nexus.PauseGame(true);
+            }
+            x += wide + ControlGap;
+            if (GUI.Button(new Rect(x, y, wide, ControlH), stepKey != null ? "Tick  " + stepKey : "Tick", _controlStyle))
+                PauseWatch.Step();
+            x += wide + ControlGap;
+            if (GUI.Button(new Rect(x, y, narrow, ControlH), "x1", speed == GameSpeed.Normal ? _controlOnStyle : _controlStyle))
+                SetSpeed(nexus, GameSpeed.Normal);
+            x += narrow + ControlGap;
+            if (GUI.Button(new Rect(x, y, narrow, ControlH), "x2", speed == GameSpeed.Fast ? _controlOnStyle : _controlStyle))
+                SetSpeed(nexus, GameSpeed.Fast);
+        }
+
+        // As the game's own speed keys do it.
+        private static void SetSpeed(LocalNexus nexus, GameSpeed speed)
+        {
+            nexus.SpeedControlEvent.Invoke(new SpeedControlEventArgs
+            {
+                ControlPriorityLevel = SpeedControlEventArgs.DefaultControlPriorityLevel,
+                GameSpeed = speed,
+                WithSFX = true
+            });
         }
 
         // Drag by the title bar.

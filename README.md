@@ -37,7 +37,8 @@ Pausing:
 - On any card, pick **Pause when one appears** to pause every time a new card of that kind turns up: on the table, in a verb or along the bottom of the screen, including a stack growing (another *Funds*). The new card gets the ring. **Stop pausing when one appears** turns it off. It doesn't fire for cards already there when a game loads.
 - The pause lands on the exact moment at any game speed. Everything else on the table has spent exactly as much time as the verb or card, no more.
 - A gold ring pulses around whatever caused the pause until you unpause. If it's a card inside a closed verb window, the ring goes around the verb.
-- **Step time 0.1 s forward** on the board menu pauses the game if needed, then moves it on by a tenth of a second. The menu stays open, so you can click it repeatedly. It still stops at any of the marks above.
+- **Step time 0.1 s forward** on the board menu pauses the game if needed, then moves it on by a tenth of a second, one tick. The menu stays open, so you can click it repeatedly. It still stops at any of the marks above.
+- The **`** key (beside 1 and 2, the game's speed keys) does the same from anywhere, whenever the game's own hotkeys work. Ctrl + **`** is still the game's debug console.
 
 Finding things and keeping an eye on timers:
 
@@ -46,7 +47,7 @@ Finding things and keeping an eye on timers:
 | ![The timers panel: running verbs and decaying cards, soonest first, with the ones that will pause marked](docs/timers.png) | ![The board menu with Find on the table, Hide timers and Step time 0.1 s forward](docs/board-menu.png) |
 
 - **Find on the table…** on the board menu opens a search box. As you type, a gold ring goes around every card and verb whose name contains what you typed. A card inside a closed verb rings the verb. **Enter** closes the box and leaves the rings for a few seconds; **Esc** clears them.
-- **Show timers** on the board menu opens a small panel listing every running verb and decaying card, soonest first, with the time left. Rows that will pause the game say *pauses*. Click a row to ring that card or verb. Drag the panel by its title; **Close** or **Hide timers** puts it away. It shows the 14 soonest. It remembers where it was and whether it was open, even after restarting the game.
+- **Show timers** on the board menu opens a small panel listing every running verb and decaying card, soonest first, with the time left. Along its top are **Pause**, **Tick** (one step, as above), **x1** and **x2**, lit to show the current speed; they do what the game's own speed controls do. Rows that will pause the game say *pauses*. Click a row to ring that card or verb. Drag the panel by its title; **Close** or **Hide timers** puts it away. It shows the 14 soonest. It remembers where it was and whether it was open, even after restarting the game.
 
 The recipe explorer:
 
@@ -115,11 +116,13 @@ Settings go in `config.ini` in the save folder, one per line. For example:
 marginalia_modifier=ctrl
 marginalia_button=forward
 marginalia_handle=off
+marginalia_step_key=f5
 ```
 
 - `marginalia_modifier` is the key held for right-click and left-drag: `alt` (the default), `ctrl` or `shift`.
 - `marginalia_button` is the mouse button that opens the menu on its own: `middle` (the default), `forward`, `back` or `none`.
 - `marginalia_handle=off` hides the **…** button on hovered cards and verbs.
+- `marginalia_step_key` is the key that moves the game on by one tick: `backquote` (the default), another key by its Input System name such as `f5` or `period`, or `none`.
 
 Some Linux window managers grab Alt + right-drag. If the menu never appears, try `ctrl`.
 

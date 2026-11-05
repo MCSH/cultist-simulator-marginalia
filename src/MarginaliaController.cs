@@ -30,6 +30,7 @@ namespace MarginaliaMod
         private const string ModifierConfigKey = "marginalia_modifier";
         private const string ButtonConfigKey = "marginalia_button";
         private const string HandleConfigKey = "marginalia_handle";
+        private const string StepKeyConfigKey = "marginalia_step_key";
 
         // A press of the menu button that moves further than this is a drag, not a click.
         private const float ClickSlop = 8f;
@@ -48,6 +49,8 @@ namespace MarginaliaMod
         private ButtonControl _menuButton;
         private bool _menuButtonRead;
         private bool? _handleOn;
+        private ButtonControl _stepKey;
+        private bool _stepKeyRead;
 
         // The menu button is down; on release it opens the menu, unless it was a drag.
         private sealed class ClickState
@@ -248,6 +251,54 @@ namespace MarginaliaMod
             return _handleOn.Value;
         }
 
+        // The key that moves the game on by one tick, or null for none. The key beside 1 and 2,
+        // the game's speed keys, unless the config says otherwise. The game only uses it with
+        // Ctrl, for its debug console.
+        private ButtonControl StepKey(Keyboard keyboard)
+        {
+            if (_stepKeyRead)
+                return _stepKey;
+            var config = Watchman.Get<Config>();
+            if (config == null)
+                return null;
+            _stepKeyRead = true;
+            var value = (config.GetConfigValue(StepKeyConfigKey) ?? "backquote").Trim();
+            if (value.Equals("none", StringComparison.OrdinalIgnoreCase) || value.Equals("off", StringComparison.OrdinalIgnoreCase))
+                return null;
+            if (value.Length == 0 || !char.IsLetter(value[0]) || !Enum.TryParse(value, true, out Key key) ||
+                !Enum.IsDefined(typeof(Key), key) || key == Key.None)
+            {
+                NoonUtility.LogWarning("Marginalia: no key called " + value + " for " + StepKeyConfigKey + ", so using the backquote key.");
+                key = Key.Backquote;
+            }
+            _stepKey = keyboard[key];
+            return _stepKey;
+        }
+
+        // What to call the step key on a button, or null if there isn't one.
+        public string StepKeyName
+        {
+            get
+            {
+                var keyboard = Keyboard.current;
+                return keyboard != null ? StepKey(keyboard)?.displayName : null;
+            }
+        }
+
+        private void CheckStepKey(Keyboard keyboard)
+        {
+            var key = StepKey(keyboard);
+            if (key == null || !key.wasPressedThisFrame || !BoardLabels.IsAttached || IsModal || BoardList.Typing || RecipeExplorer.Typing)
+                return;
+            // Only the key alone: with Ctrl it's the game's debug console.
+            if (keyboard.ctrlKey.isPressed || keyboard.altKey.isPressed || keyboard.shiftKey.isPressed)
+                return;
+            // When the game's own hotkeys would work: no text being typed, no forced pause.
+            if (Watchman.Get<LocalNexus>() is UIController ui && ui.HotkeysDisabled())
+                return;
+            PauseWatch.Step();
+        }
+
         private void Update()
         {
             var keyboard = Keyboard.current;
@@ -291,6 +342,8 @@ namespace MarginaliaMod
                     _wiki.Back();
                 return;
             }
+
+            CheckStepKey(keyboard);
 
             // Esc only closes the board list while typing in it; otherwise Esc is the game's.
             if (BoardList.Typing && !IsModal && keyboard.escapeKey.wasPressedThisFrame)
